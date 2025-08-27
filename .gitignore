@@ -1,0 +1,28 @@
+# Python / cache
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+.env
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Data / outputs / checkpoints / logs
+data/
+outputs/
+logs/
+checkpoints/
+wandb/
+*.pt
+*.pth
+*.ckpt
+
+# Caches (incl. HF)
+.cache/
+.cache/huggingface/
+
+# SLURM logs
+slurm-*.out
