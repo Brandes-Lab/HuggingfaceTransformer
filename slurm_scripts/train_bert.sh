@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=train_modernBERT_all_uniref
-#SBATCH --partition=a100_dev
+#SBATCH --partition=a100_long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=100G
-#SBATCH --time=04:00:00
+#SBATCH --time=28-00:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 

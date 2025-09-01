@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=process_uniref
+#SBATCH --job-name=tok_val
 #SBATCH --partition=cpu_short
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
@@ -26,10 +26,4 @@ echo "Caching to: $HF_HOME"
 # Navigate to project directory
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
-# Run tokenization
-# python python_scripts/tokenize_dataset.py
-
-# python python_scripts/process_uniref.py
-# python python_scripts/tokenize_uniref.py
-
-python python_scripts/create_small_chunks.py
+python python_scripts/tokenize_uniref.py --split val
