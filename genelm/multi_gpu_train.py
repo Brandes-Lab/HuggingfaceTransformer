@@ -7,10 +7,10 @@ from transformers import (
     TrainingArguments,
 )
 
-from .callbacks import ZeroShotVEPEvaluationCallback
-from .data import MLMDataCollator, ProteinDataset
+from .evaluation import ZeroShotVEPEvaluationCallback
 from .models import ProteinBertModel
-from .utils import TokenizerLoader
+from .tokenization import TokenizerLoader
+from .training import MLMDataCollator, ProteinDataset
 
 
 def main():

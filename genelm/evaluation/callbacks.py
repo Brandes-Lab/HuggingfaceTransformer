@@ -124,11 +124,12 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
             inputs = {k: v.cuda(non_blocking=True) for k, v in inputs.items()}
 
         # Get model predictions
-        with (
+        context_manager = (
             torch.inference_mode()
             if self.evaluation_style == "vectorized"
             else torch.no_grad()
-        ):
+        )
+        with context_manager:
             logits = model(**inputs).logits
 
         # Find mask position and compute probabilities

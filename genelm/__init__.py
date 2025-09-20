@@ -12,10 +12,10 @@ __version__ = "0.0.1"
 __author__ = "Brandes Lab"
 
 # Import main classes for easy access
-from .callbacks import ElapsedTimeLoggerCallback, ZeroShotVEPEvaluationCallback
-from .data import MLMDataCollator, ProteinDataset
+from .evaluation import ElapsedTimeLoggerCallback, ZeroShotVEPEvaluationCallback
 from .models import ProteinBertModel
-from .utils import TokenizerLoader
+from .tokenization import TokenizerLoader
+from .training import MLMDataCollator, ProteinDataset
 
 __all__ = [
     "ProteinBertModel",

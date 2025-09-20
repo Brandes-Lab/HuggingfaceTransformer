@@ -139,7 +139,6 @@ dmypy.json
 
 # Model checkpoints and outputs
 checkpoints/
-models/
 outputs/
 runs/
 logs/
