@@ -10,3 +10,18 @@ This package provides tools for:
 
 __version__ = "0.0.1"
 __author__ = "Brandes Lab"
+
+# Import main classes for easy access
+from .callbacks import ElapsedTimeLoggerCallback, ZeroShotVEPEvaluationCallback
+from .data import MLMDataCollator, ProteinDataset
+from .models import ProteinBertModel
+from .utils import TokenizerLoader
+
+__all__ = [
+    "ProteinBertModel",
+    "ProteinDataset",
+    "MLMDataCollator",
+    "ZeroShotVEPEvaluationCallback",
+    "ElapsedTimeLoggerCallback",
+    "TokenizerLoader",
+]

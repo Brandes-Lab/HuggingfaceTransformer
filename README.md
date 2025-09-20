@@ -17,7 +17,7 @@ A Python package for training BERT-style language models on biological sequences
 
 ```bash
 # Clone the repository
-git clone https://github.com/anushkasinha/genelm.git
+git clone https://github.com/brandes-Lab/huggingfaceTransformer.git
 cd genelm
 
 # Install the package
