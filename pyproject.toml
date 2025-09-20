@@ -9,9 +9,6 @@ description = "A package for training language models on genomic and protein seq
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
-authors = [
-    {name = "Benjamin Levy", email = "benjamin.levy@nyu.edu"},
-]
 keywords = ["machine learning", "genomics", "protein", "transformer", "bert"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -48,9 +45,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/benjaminlevy/genelm"
-Repository = "https://github.com/benjaminlevy/genelm"
-Issues = "https://github.com/benjaminlevy/genelm/issues"
+Homepage = "https://github.com/brandes-Lab/huggingfaceTransformer"
+Repository = "https://github.com/brandes-Lab/huggingfaceTransformer"
+Issues = "https://github.com/brandes-Lab/huggingfaceTransformer/issues"
 
 [project.scripts]
 genelm-build-tokenizer = "genelm.build_char_tokenizer:main"

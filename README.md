@@ -17,7 +17,7 @@ A Python package for training BERT-style language models on biological sequences
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/genelm.git
+git clone https://github.com/anushkasinha/genelm.git
 cd genelm
 
 # Install the package
@@ -336,33 +336,6 @@ python -m genelm.tokenize_uniref --split train
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@software{genelm2024,
-  title={GeneLM: Language Models for Genomic and Protein Sequences},
-  author={Levy, Benjamin},
-  year={2024},
-  url={https://github.com/your-username/genelm}
-}
-```
-
-## Acknowledgments
-
-- Built on [Hugging Face Transformers](https://huggingface.co/transformers/)
-- Uses [ModernBERT](https://huggingface.co/answerdotai/ModernBERT-base) architecture
-- Inspired by protein language modeling research
-
-## Support
-
-For questions and support:
-
-- Open an issue on GitHub
-- Contact: benjamin.levy@nyu.edu
-
 ---
 
 **Note**: This package is under active development. APIs may change between versions.

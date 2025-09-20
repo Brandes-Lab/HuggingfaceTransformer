@@ -8,5 +8,5 @@ This package provides tools for:
 - Multi-GPU training support
 """
 
-__version__ = "0.1.0"
-__author__ = "Benjamin Levy"
+__version__ = "0.0.1"
+__author__ = "Brandes Lab"
