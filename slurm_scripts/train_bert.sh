@@ -42,4 +42,4 @@ echo "Using MASTER_PORT=$MASTER_PORT"
 # torchrun --nproc_per_node=2 --master_port=$MASTER_PORT python_scripts/multi_gpu_train.py
 # torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/working_train2.py
 # torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/modernBERT_single_gpu.py
-torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/modernBERT_long_ctxt_length.py
+torchrun --nproc_per_node=1 --master_port=$MASTER_PORT -m genelm.modernBERT_long_ctxt_length

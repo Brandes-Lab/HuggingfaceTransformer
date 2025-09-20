@@ -1,17 +1,22 @@
-import os, time, argparse, torch, wandb, random
+import argparse
+import time
+
 import numpy as np
 import pandas as pd
+import torch
+import wandb
 from datasets import load_from_disk
 from sklearn.metrics import roc_auc_score
 from transformers import (
-    PreTrainedTokenizerFast,
     DataCollatorForLanguageModeling,
-    Trainer,
-    TrainingArguments,
-    TrainerCallback,
-    ModernBertForMaskedLM,
     ModernBertConfig,
+    ModernBertForMaskedLM,
+    PreTrainedTokenizerFast,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
 )
+
 
 class TokenizerLoader:
     def __init__(self, tokenizer_path):
@@ -19,6 +24,7 @@ class TokenizerLoader:
 
     def load(self):
         return PreTrainedTokenizerFast.from_pretrained(self.tokenizer_path)
+
 
 class ProteinBertModel:
     def __init__(self, vocab_size, tokenizer):
@@ -50,7 +56,9 @@ class ProteinBertModel:
 
 
 class ZeroShotVEPEvaluationCallback(TrainerCallback):
-    def __init__(self, tokenizer, input_csv, trainer, max_len=8192, eval_every_n_steps=50000):
+    def __init__(
+        self, tokenizer, input_csv, trainer, max_len=8192, eval_every_n_steps=50000
+    ):
         self.tokenizer = tokenizer
         self.input_csv = input_csv
         self.max_len = max_len
@@ -64,18 +72,18 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
             dtype={"pos": np.int32, "label": np.int8},
         )
 
-        # seed = int(getattr(trainer.args, "seed", 42))  
+        # seed = int(getattr(trainer.args, "seed", 42))
         # df = pd.read_csv(
         #     input_csv,
         #     usecols=["sequence", "pos", "ref", "alt", "label"],
         #     dtype={"pos": np.int32, "label": np.int8},
         # )
-        # # keep exactly 5k random rows 
+        # # keep exactly 5k random rows
         # n = min(5000, len(df))
         # self.df = df.sample(n=n, random_state=seed).reset_index(drop=True)
 
     def compute_log_odds(self, model, seq, pos, ref, alt):
-    # skip if > max_len or ref mismatch
+        # skip if > max_len or ref mismatch
         if len(seq) > self.max_len or pos >= len(seq) or seq[pos] != ref:
             return None
 
@@ -91,7 +99,11 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         with torch.inference_mode():
             logits = model(**inputs).logits
 
-        mask_index = (inputs["input_ids"][0] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0].item()
+        mask_index = (
+            (inputs["input_ids"][0] == self.tokenizer.mask_token_id)
+            .nonzero(as_tuple=True)[0]
+            .item()
+        )
         probs = torch.nn.functional.softmax(logits[0, mask_index], dim=0)
 
         ref_id = self.tokenizer.convert_tokens_to_ids(ref)
@@ -107,23 +119,24 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         elapsed_hours = (time.time() - self.start_time) / 3600
         print(f"Running zero-shot VEP evaluation at step {step_id}", flush=True)
 
-        seqs   = self.df["sequence"].values
-        poses  = self.df["pos"].values
-        refs   = self.df["ref"].values
-        alts   = self.df["alt"].values
+        seqs = self.df["sequence"].values
+        poses = self.df["pos"].values
+        refs = self.df["ref"].values
+        alts = self.df["alt"].values
         labels = self.df["label"].to_numpy(dtype=np.int8)
 
         n = len(labels)
-        preds = np.full(n, np.nan, dtype=np.float32)  
-
+        preds = np.full(n, np.nan, dtype=np.float32)
 
         was_training = model.training
         model.eval()
         try:
             for i in range(n):
-                s = self.compute_log_odds(model, seqs[i], int(poses[i]), refs[i], alts[i])
+                s = self.compute_log_odds(
+                    model, seqs[i], int(poses[i]), refs[i], alts[i]
+                )
                 if s is not None:
-                    preds[i] = -float(s)  
+                    preds[i] = -float(s)
         finally:
             if was_training:
                 model.train()
@@ -132,9 +145,17 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         if mask.sum() >= 10 and (labels[mask].min() != labels[mask].max()):
             auc = roc_auc_score(labels[mask], preds[mask])
             print(f"AUC at step {step_id}: {auc:.4f}")
-            wandb.log({"zero_shot_vep_auc": auc, "step": step_id, "elapsed_hours": elapsed_hours})
+            wandb.log(
+                {
+                    "zero_shot_vep_auc": auc,
+                    "step": step_id,
+                    "elapsed_hours": elapsed_hours,
+                }
+            )
         else:
-            print(f"Skipping AUC at step {step_id} due to insufficient data", flush=True)
+            print(
+                f"Skipping AUC at step {step_id} due to insufficient data", flush=True
+            )
 
     def on_step_begin(self, args, state, control, model=None, **kwargs):
         if state.global_step == 0:
@@ -147,7 +168,6 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         return control
 
 
-
 class ElapsedTimeLoggerCallback(TrainerCallback):
     def __init__(self):
         self.start_time = time.time()
@@ -158,11 +178,81 @@ class ElapsedTimeLoggerCallback(TrainerCallback):
             logs["elapsed_hours"] = elapsed_hours
             wandb.log(logs, step=state.global_step)
 
-def main():
-    run_name = "modernBERT_uniref_tokenized8192"
-    wandb.init(project="huggingface_bert_sweep", name=run_name, entity="sinha-anushka12-na")
 
-    tokenizer = TokenizerLoader("char_tokenizer").load()
+def main():
+    parser = argparse.ArgumentParser(
+        description="Train ModernBERT with long context length"
+    )
+    parser.add_argument(
+        "--train_dataset",
+        type=str,
+        default="/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train",
+        help="Path to training dataset",
+    )
+    parser.add_argument(
+        "--val_dataset",
+        type=str,
+        default="/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation",
+        help="Path to validation dataset",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="/gpfs/data/brandeslab/model_checkpts",
+        help="Directory to save model checkpoints",
+    )
+    parser.add_argument(
+        "--tokenizer_path",
+        type=str,
+        default="char_tokenizer",
+        help="Path to tokenizer directory",
+    )
+    parser.add_argument(
+        "--vep_csv",
+        type=str,
+        default="/gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv",
+        help="Path to ClinVar CSV for zero-shot VEP evaluation",
+    )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default="modernBERT_uniref_tokenized8192",
+        help="Name for this training run",
+    )
+    parser.add_argument(
+        "--max_steps", type=int, default=2_000_000, help="Maximum training steps"
+    )
+    parser.add_argument(
+        "--learning_rate", type=float, default=3e-4, help="Learning rate"
+    )
+    parser.add_argument(
+        "--per_device_train_batch_size",
+        type=int,
+        default=16,
+        help="Training batch size per device",
+    )
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=16,
+        help="Gradient accumulation steps",
+    )
+    parser.add_argument(
+        "--eval_every_n_steps",
+        type=int,
+        default=50000,
+        help="Run VEP evaluation every N steps",
+    )
+
+    args = parser.parse_args()
+
+    wandb.init(
+        project="huggingface_bert_sweep",
+        name=args.run_name,
+        entity="sinha-anushka12-na",
+    )
+
+    tokenizer = TokenizerLoader(args.tokenizer_path).load()
     print("Tokenizer vocab size:", tokenizer.vocab_size)
 
     model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
@@ -170,46 +260,38 @@ def main():
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Load pre-tokenized datasets
-    train_ds = load_from_disk("/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train")
-    val_ds = load_from_disk("/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation")
+    train_ds = load_from_disk(args.train_dataset)
+    val_ds = load_from_disk(args.val_dataset)
 
     print("Max train length:", max(train_ds["length"]))
     print("99th percentile:", np.percentile(train_ds["length"], 99))
     print("95th percentile:", np.percentile(train_ds["length"], 95))
 
     data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=True,
-        mlm_probability=0.15
+        tokenizer=tokenizer, mlm=True, mlm_probability=0.15
     )
 
     training_args = TrainingArguments(
-        output_dir=f"/gpfs/data/brandeslab/model_checkpts/{run_name}",
-        max_steps=2_000_000,
-        
-        per_device_train_batch_size=16,
-        gradient_accumulation_steps=16,
+        output_dir=f"{args.output_dir}/{args.run_name}",
+        max_steps=args.max_steps,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         per_device_eval_batch_size=4,
-        
         bf16=True,
         fp16=False,
-        
         dataloader_num_workers=16,
         dataloader_persistent_workers=True,
         dataloader_prefetch_factor=2,
-        
-        eval_strategy="no",             # not running eval
+        eval_strategy="no",  # not running eval
         logging_strategy="steps",
         logging_steps=1000,
         save_strategy="no",
         report_to="wandb",
-        run_name=run_name,
-        
-        learning_rate=3e-4,
+        run_name=args.run_name,
+        learning_rate=args.learning_rate,
         remove_unused_columns=False,
-        
         group_by_length=True,
-        length_column_name="length"
+        length_column_name="length",
     )
 
     trainer = Trainer(
@@ -220,20 +302,23 @@ def main():
         tokenizer=tokenizer,
         data_collator=data_collator,
     )
-    dl = trainer.get_train_dataloader() 
-    for i, batch in enumerate(dl): 
-        print(f"Batch {i} max length: {batch['input_ids'].shape[1]}") 
-        if i > 5: 
+    dl = trainer.get_train_dataloader()
+    for i, batch in enumerate(dl):
+        print(f"Batch {i} max length: {batch['input_ids'].shape[1]}")
+        if i > 5:
             break
 
-    trainer.add_callback(ZeroShotVEPEvaluationCallback(
-        tokenizer=tokenizer,
-        input_csv="/gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv",
-        trainer=trainer,
-        eval_every_n_steps=50000
-    ))
+    trainer.add_callback(
+        ZeroShotVEPEvaluationCallback(
+            tokenizer=tokenizer,
+            input_csv=args.vep_csv,
+            trainer=trainer,
+            eval_every_n_steps=args.eval_every_n_steps,
+        )
+    )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.train()
+
 
 if __name__ == "__main__":
     main()

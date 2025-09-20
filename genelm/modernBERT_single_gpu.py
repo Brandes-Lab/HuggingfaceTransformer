@@ -1,16 +1,21 @@
-import os, time, torch, wandb
+import argparse
+import time
+
 import pandas as pd
+import torch
+import wandb
+from datasets import load_from_disk
 from sklearn.metrics import roc_auc_score
 from transformers import (
-    PreTrainedTokenizerFast,
     DataCollatorForLanguageModeling,
-    Trainer,
-    TrainingArguments,
-    TrainerCallback,
-    ModernBertForMaskedLM,
     ModernBertConfig,
+    ModernBertForMaskedLM,
+    PreTrainedTokenizerFast,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
 )
-from datasets import load_from_disk
+
 
 class TokenizerLoader:
     def __init__(self, tokenizer_path):
@@ -50,11 +55,11 @@ class ProteinBertModel:
             deterministic_flash_attn=False,
             global_rope_theta=160000.0,
             local_rope_theta=10000.0,
-            pad_token_id=getattr(self.tokenizer, 'pad_token_id', None),
-            eos_token_id=getattr(self.tokenizer, 'eos_token_id', None),
-            bos_token_id=getattr(self.tokenizer, 'bos_token_id', None),
-            cls_token_id=getattr(self.tokenizer, 'cls_token_id', None),
-            sep_token_id=getattr(self.tokenizer, 'sep_token_id', None),
+            pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
+            eos_token_id=getattr(self.tokenizer, "eos_token_id", None),
+            bos_token_id=getattr(self.tokenizer, "bos_token_id", None),
+            cls_token_id=getattr(self.tokenizer, "cls_token_id", None),
+            sep_token_id=getattr(self.tokenizer, "sep_token_id", None),
         )
         return ModernBertForMaskedLM(config)
 
@@ -65,14 +70,14 @@ class MLMDataCollator:
 
     def get(self):
         return DataCollatorForLanguageModeling(
-            tokenizer=self.tokenizer,
-            mlm=True,
-            mlm_probability=0.15
+            tokenizer=self.tokenizer, mlm=True, mlm_probability=0.15
         )
 
 
 class ZeroShotVEPEvaluationCallback(TrainerCallback):
-    def __init__(self, tokenizer, input_csv, trainer, max_len=512, eval_every_n_steps=20000):
+    def __init__(
+        self, tokenizer, input_csv, trainer, max_len=512, eval_every_n_steps=20000
+    ):
         self.tokenizer = tokenizer
         self.input_csv = input_csv
         self.max_len = max_len
@@ -89,13 +94,19 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         masked_seq[pos] = self.tokenizer.mask_token
         masked_seq = "".join(masked_seq)
 
-        inputs = self.tokenizer(masked_seq, return_tensors="pt", truncation=True, max_length=self.max_len)
+        inputs = self.tokenizer(
+            masked_seq, return_tensors="pt", truncation=True, max_length=self.max_len
+        )
         inputs = {k: v.cuda() for k, v in inputs.items()}
 
         with torch.no_grad():
             logits = model(**inputs).logits
 
-        mask_index = (inputs["input_ids"][0] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0].item()
+        mask_index = (
+            (inputs["input_ids"][0] == self.tokenizer.mask_token_id)
+            .nonzero(as_tuple=True)[0]
+            .item()
+        )
         probs = torch.nn.functional.softmax(logits[0, mask_index], dim=0)
 
         ref_id = self.tokenizer.convert_tokens_to_ids(ref)
@@ -116,7 +127,9 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         labels = []
 
         for _, row in self.df.iterrows():
-            score = self.compute_log_odds(model, row["sequence"], int(row["pos"]), row["ref"], row["alt"])
+            score = self.compute_log_odds(
+                model, row["sequence"], int(row["pos"]), row["ref"], row["alt"]
+            )
             log_odds_scores.append(score)
             labels.append(int(row["label"]))
 
@@ -125,11 +138,21 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
 
         valid_mask = df_out["log_odds"].notnull()
         if valid_mask.sum() >= 10 and len(set(df_out["label"])) > 1:
-            auc = roc_auc_score(df_out.loc[valid_mask, "label"], -df_out.loc[valid_mask, "log_odds"])
+            auc = roc_auc_score(
+                df_out.loc[valid_mask, "label"], -df_out.loc[valid_mask, "log_odds"]
+            )
             print(f"AUC at step {step_id}: {auc:.4f}")
-            wandb.log({"zero_shot_vep_auc": auc, "step": step_id, "elapsed_hours": elapsed_hours})
+            wandb.log(
+                {
+                    "zero_shot_vep_auc": auc,
+                    "step": step_id,
+                    "elapsed_hours": elapsed_hours,
+                }
+            )
         else:
-            print(f"Skipping AUC at step {step_id} due to insufficient data", flush=True)
+            print(
+                f"Skipping AUC at step {step_id} due to insufficient data", flush=True
+            )
 
     def on_step_begin(self, args, state, control, model=None, **kwargs):
         if state.global_step == 0:
@@ -154,20 +177,83 @@ class ElapsedTimeLoggerCallback(TrainerCallback):
 
 
 def main():
-    run_name = "modernBERT_medium_512_old"
-    wandb.init(project="huggingface_bert_sweep", name=run_name, entity="sinha-anushka12-na")
-    
-    tokenizer = TokenizerLoader("char_tokenizer").load()
+    parser = argparse.ArgumentParser(description="Train ModernBERT on single GPU")
+    parser.add_argument(
+        "--dataset_path",
+        type=str,
+        default="/gpfs/data/brandeslab/Data/tokenized_datasets/uniref90_tokenized_single_char_512",
+        help="Path to tokenized dataset",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="/gpfs/data/brandeslab/model_checkpts",
+        help="Directory to save model checkpoints",
+    )
+    parser.add_argument(
+        "--tokenizer_path",
+        type=str,
+        default="char_tokenizer",
+        help="Path to tokenizer directory",
+    )
+    parser.add_argument(
+        "--vep_csv",
+        type=str,
+        default="/gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv",
+        help="Path to ClinVar CSV for zero-shot VEP evaluation",
+    )
+    parser.add_argument(
+        "--run_name",
+        type=str,
+        default="modernBERT_medium_512_old",
+        help="Name for this training run",
+    )
+    parser.add_argument(
+        "--max_steps", type=int, default=2_000_000, help="Maximum training steps"
+    )
+    parser.add_argument(
+        "--learning_rate", type=float, default=3e-4, help="Learning rate"
+    )
+    parser.add_argument(
+        "--per_device_train_batch_size",
+        type=int,
+        default=64,
+        help="Training batch size per device",
+    )
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=4,
+        help="Gradient accumulation steps",
+    )
+    parser.add_argument(
+        "--eval_every_n_steps",
+        type=int,
+        default=20000,
+        help="Run VEP evaluation every N steps",
+    )
+
+    args = parser.parse_args()
+
+    wandb.init(
+        project="huggingface_bert_sweep",
+        name=args.run_name,
+        entity="sinha-anushka12-na",
+    )
+
+    tokenizer = TokenizerLoader(args.tokenizer_path).load()
     print("Tokenizer vocab size:", tokenizer.vocab_size)
 
-    dataset = ProteinDataset("/gpfs/data/brandeslab/Data/tokenized_datasets/uniref90_tokenized_single_char_512").load()
+    dataset = ProteinDataset(args.dataset_path).load()
     dataset["validation"] = dataset["validation"].shuffle(seed=42).select(range(10_000))
     dataset["test"] = dataset["test"].shuffle(seed=42).select(range(10_000))
 
     model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
     model.cuda()
 
-    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}", flush=True)
+    print(
+        f"Model parameters: {sum(p.numel() for p in model.parameters()):,}", flush=True
+    )
     data_collator = MLMDataCollator(tokenizer).get()
 
     from torch.utils.data import DataLoader
@@ -182,22 +268,22 @@ def main():
     # print("Number of masked tokens in sample 0:", (labels[0] != -100).sum().item())
 
     training_args = TrainingArguments(
-        output_dir=f"/gpfs/data/brandeslab/model_checkpts/{run_name}",
-        #num_train_epochs=100,
-        max_steps=2_000_000,
-        per_device_train_batch_size=64,
-        gradient_accumulation_steps=4,
+        output_dir=f"{args.output_dir}/{args.run_name}",
+        # num_train_epochs=100,
+        max_steps=args.max_steps,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         per_device_eval_batch_size=4,
         dataloader_num_workers=16,
         eval_strategy="steps",
-        eval_steps=20000,
+        eval_steps=args.eval_every_n_steps,
         save_steps=500000,
         logging_strategy="steps",
-        logging_steps=20000,
+        logging_steps=args.eval_every_n_steps,
         report_to="wandb",
-        run_name=run_name,
+        run_name=args.run_name,
         fp16=True,
-        learning_rate=3e-4,
+        learning_rate=args.learning_rate,
         remove_unused_columns=False,
     )
 
@@ -213,9 +299,9 @@ def main():
     trainer.add_callback(
         ZeroShotVEPEvaluationCallback(
             tokenizer=tokenizer,
-            input_csv="/gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv",
+            input_csv=args.vep_csv,
             trainer=trainer,
-            eval_every_n_steps=20000,
+            eval_every_n_steps=args.eval_every_n_steps,
         )
     )
 
