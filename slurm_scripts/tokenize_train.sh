@@ -26,4 +26,4 @@ echo "Caching to: $HF_HOME"
 # Navigate to project directory
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
-python python_scripts/tokenize_uniref.py --split val
+python -m genelm.tokenize_uniref --split val

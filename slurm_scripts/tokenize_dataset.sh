@@ -32,4 +32,4 @@ cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 # python python_scripts/process_uniref.py
 # python python_scripts/tokenize_uniref.py
 
-python python_scripts/create_small_chunks.py
+python -m genelm.create_small_chunks
