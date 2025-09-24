@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=train_modernBERT_all_uniref
-#SBATCH --partition=a100_long
+#SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:4
-#SBATCH --nodes=2
+#SBATCH --nodes=1
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=0
-#SBATCH --time=28-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
@@ -63,11 +63,11 @@ echo "Using MASTER_PORT=$MASTER_PORT"
 # torchrun --nproc_per_node=2 --master_port=$MASTER_PORT python_scripts/multi_gpu_train.py
 # torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/working_train2.py
 # torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/modernBERT_single_gpu.py
-torchrun 
-    --nnodes=2 \
+torchrun \
+    --nnodes=1 \
     --nproc-per-node=4 \
     --master_addr=${MASTER_ADDR} \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
-    python_scripts/multi_gpu_train.py
+    /gpfs/data/oermannlab/users/steelr04/HuggingfaceTransformer/python_scripts/multi_gpu_train.py

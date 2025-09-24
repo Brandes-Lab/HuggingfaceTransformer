@@ -158,7 +158,7 @@ def main():
         save_steps=100000,
         logging_strategy="steps",
         logging_steps=100000,
-        report_to="wandb" if rank == 0 else None,
+        report_to="wandb",
         run_name="bert_2048_2GPU",
         fp16=True,
         local_rank=rank,
@@ -174,9 +174,9 @@ def main():
         data_collator=data_collator
     )
     
-    if int(os.environ.get("LOCAL_RANK", 0)) == 0: 
-        print("Initializing wandb")
-        wandb.init(project="huggingface_bert_multiGPU", name="bert_2048_2GPU")
+    # if int(os.environ.get("LOCAL_RANK", 0)) == 0: 
+    #     print("Initializing wandb")
+    #     wandb.init(project="huggingface_bert_multiGPU", name="bert_2048_2GPU")
 
     trainer.add_callback(  
         ZeroShotVEPEvaluationCallback(
