@@ -166,7 +166,6 @@ slurm-*.err
 *.err
 
 # IDE and editor files
-.vscode/
 .idea/
 *.swp
 *.swo
