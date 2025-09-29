@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 
 import numpy as np
-import wandb
+import torch
 from datasets import load_from_disk
 from transformers import (
     DataCollatorForLanguageModeling,
@@ -10,9 +10,20 @@ from transformers import (
     TrainingArguments,
 )
 
+import wandb
 from gLM.callbacks import ElapsedTimeLoggerCallback, ZeroShotVEPEvaluationCallback
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
+
+if torch.cuda.is_available():
+    print("Using CUDA")
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    print("Using MPS")
+    DEVICE = torch.device("mps")
+else:
+    print("Using CPU")
+    DEVICE = torch.device("cpu")
 
 
 @dataclass
@@ -45,10 +56,7 @@ class DataArguments:
     )
 
 
-@dataclass
-class ExperimentArguments:
-    """Arguments for experiment configuration."""
-
+class CustomTrainingArguments(TrainingArguments):
     run_name: str = field(
         default="modernBERT_uniref_tokenized8192",
         metadata={"help": "Name for the experiment run"},
@@ -56,13 +64,6 @@ class ExperimentArguments:
     output_dir: str = field(
         default="/gpfs/data/brandeslab/model_checkpts",
         metadata={"help": "Directory to save model checkpoints"},
-    )
-    wandb_project: str = field(
-        default="huggingface_bert_sweep",
-        metadata={"help": "Weights & Biases project name"},
-    )
-    wandb_entity: str = field(
-        default="sinha-anushka12-na", metadata={"help": "Weights & Biases entity name"}
     )
     max_steps: int = field(
         default=2_000_000, metadata={"help": "Maximum number of training steps"}
@@ -92,22 +93,53 @@ class ExperimentArguments:
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
 
+    # Arguments that shouldn't be changed really
+    bf16: bool = field(default=True)
+    fp16: bool = field(default=False)
+    dataloader_persistent_workers: bool = field(default=True)
+    dataloader_prefetch_factor: int = field(default=2)
+    eval_strategy: str = field(default="no")  # not running eval
+    logging_strategy: str = field(default="steps")
+    save_strategy: str = field(default="no")
+    report_to: str = field(default="wandb")
+    remove_unused_columns: bool = field(default=False)
+    group_by_length: bool = field(default=True)
+    length_column_name: str = field(default="length")
+
+
+@dataclass
+class WandbArguments:
+    """Arguments for Weights & Bias initialization."""
+
+    wandb_project: str = field(
+        default="huggingface_bert_sweep",
+        metadata={"help": "Weights & Biases project name"},
+    )
+    wandb_entity: str = field(
+        default="sinha-anushka12-na", metadata={"help": "Weights & Biases entity name"}
+    )
+    disable_wandb: bool = field(
+        default=False,
+        metadata={"help": "Whether to disable WandB logging. Defaults to False."},
+    )
+
 
 def main():
     # Parse arguments
     parser = HfArgumentParser(
-        (ModelArguments, DataArguments, ExperimentArguments, TrainingArguments)
+        (ModelArguments, DataArguments, CustomTrainingArguments, WandbArguments)
     )
-    model_args, data_args, exp_args, training_args = (
+    model_args, data_args, training_args, wandb_args = (
         parser.parse_args_into_dataclasses()
     )
 
     # Initialize wandb
-    wandb.init(
-        project=exp_args.wandb_project,
-        name=exp_args.run_name,
-        entity=exp_args.wandb_entity,
-    )
+    if not wandb_args.disable_wandb:
+        wandb.init(
+            project=wandb_args.wandb_project,
+            name=training_args.run_name,
+            entity=wandb_args.wandb_entity,
+        )
 
     # Load tokenizer
     tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
@@ -115,7 +147,7 @@ def main():
 
     # Build model
     model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
-    model.cuda()
+    model.to(device=DEVICE)
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Load pre-tokenized datasets
@@ -126,33 +158,13 @@ def main():
     print("99th percentile:", np.percentile(train_ds["length"], 99))
     print("95th percentile:", np.percentile(train_ds["length"], 95))
 
+    print(training_args.mlm_probability)
     data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=True, mlm_probability=exp_args.mlm_probability
+        tokenizer=tokenizer, mlm=True, mlm_probability=training_args.mlm_probability
     )
 
     # Update training arguments with parsed values
-    training_args.output_dir = f"{exp_args.output_dir}/{exp_args.run_name}"
-    training_args.max_steps = exp_args.max_steps
-    training_args.per_device_train_batch_size = exp_args.per_device_train_batch_size
-    training_args.gradient_accumulation_steps = exp_args.gradient_accumulation_steps
-    training_args.per_device_eval_batch_size = exp_args.per_device_eval_batch_size
-    training_args.dataloader_num_workers = exp_args.dataloader_num_workers
-    training_args.logging_steps = exp_args.logging_steps
-    training_args.learning_rate = exp_args.learning_rate
-    training_args.run_name = exp_args.run_name
-
-    # Set other training arguments that weren't parameterized
-    training_args.bf16 = True
-    training_args.fp16 = False
-    training_args.dataloader_persistent_workers = True
-    training_args.dataloader_prefetch_factor = 2
-    training_args.eval_strategy = "no"  # not running eval
-    training_args.logging_strategy = "steps"
-    training_args.save_strategy = "no"
-    training_args.report_to = "wandb"
-    training_args.remove_unused_columns = False
-    training_args.group_by_length = True
-    training_args.length_column_name = "length"
+    training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
     trainer = Trainer(
         model=model,
@@ -173,7 +185,7 @@ def main():
             tokenizer=tokenizer,
             input_csv=data_args.vep_input_csv,
             trainer=trainer,
-            eval_every_n_steps=exp_args.vep_eval_steps,
+            eval_every_n_steps=training_args.vep_eval_steps,
         )
     )
     trainer.add_callback(ElapsedTimeLoggerCallback())
