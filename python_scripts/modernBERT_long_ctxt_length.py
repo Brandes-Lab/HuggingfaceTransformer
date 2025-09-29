@@ -9,9 +9,11 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+from torch.utils.data import DataLoader
 
 import wandb
 from gLM.callbacks import ElapsedTimeLoggerCallback, ZeroShotVEPEvaluationCallback
+from gLM.data_utils import DynamicBatchSampler, DynamicDataCollator
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
 
@@ -24,6 +26,72 @@ elif torch.backends.mps.is_available():
 else:
     print("Using CPU")
     DEVICE = torch.device("cpu")
+
+
+class DynamicBatchTrainer(Trainer):
+    """Custom Trainer that supports dynamic batching."""
+
+    def __init__(self, max_tokens_per_batch=32768, use_dynamic_batching=True, **kwargs):
+        super().__init__(**kwargs)
+        self.max_tokens_per_batch = max_tokens_per_batch
+        self.use_dynamic_batching = use_dynamic_batching
+
+    def get_train_dataloader(self):
+        """Create train dataloader with dynamic batching if enabled."""
+        if not self.use_dynamic_batching:
+            return super().get_train_dataloader()
+
+        train_dataset = self.train_dataset
+
+        # Create dynamic batch sampler
+        batch_sampler = DynamicBatchSampler(
+            dataset=train_dataset,
+            max_tokens_per_batch=self.max_tokens_per_batch,
+            shuffle=True,
+            drop_last=self.args.dataloader_drop_last,
+        )
+
+        # Create dataloader with custom batch sampler
+        dataloader = DataLoader(
+            train_dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=self.data_collator,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            persistent_workers=self.args.dataloader_persistent_workers,
+            prefetch_factor=self.args.dataloader_prefetch_factor,
+        )
+
+        return dataloader
+
+    def get_eval_dataloader(self, eval_dataset=None):
+        """Create eval dataloader with dynamic batching if enabled."""
+        if not self.use_dynamic_batching:
+            return super().get_eval_dataloader(eval_dataset)
+
+        if eval_dataset is None:
+            eval_dataset = self.eval_dataset
+
+        # Create dynamic batch sampler for evaluation
+        batch_sampler = DynamicBatchSampler(
+            dataset=eval_dataset,
+            max_tokens_per_batch=self.max_tokens_per_batch,
+            shuffle=False,  # Don't shuffle for evaluation
+            drop_last=False,
+        )
+
+        # Create dataloader with custom batch sampler
+        dataloader = DataLoader(
+            eval_dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=self.data_collator,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            persistent_workers=self.args.dataloader_persistent_workers,
+            prefetch_factor=self.args.dataloader_prefetch_factor,
+        )
+
+        return dataloader
 
 
 @dataclass
@@ -92,6 +160,14 @@ class CustomTrainingArguments(TrainingArguments):
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
+    max_tokens_per_batch: int = field(
+        default=32768,
+        metadata={"help": "Maximum total tokens per batch for dynamic batching"},
+    )
+    use_dynamic_batching: bool = field(
+        default=True,
+        metadata={"help": "Whether to use dynamic batching based on sequence lengths"},
+    )
 
     # Arguments that shouldn't be changed really
     bf16: bool = field(default=True)
@@ -158,27 +234,63 @@ def main():
     print("99th percentile:", np.percentile(train_ds["length"], 99))
     print("95th percentile:", np.percentile(train_ds["length"], 95))
 
-    print(training_args.mlm_probability)
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=True, mlm_probability=training_args.mlm_probability
-    )
+    print(training_args.mlm_probability.default)
+
+    # Choose data collator based on dynamic batching setting
+    if training_args.use_dynamic_batching:
+        data_collator = DynamicDataCollator(
+            tokenizer=tokenizer,
+            mlm=True,
+            mlm_probability=training_args.mlm_probability.default,
+        )
+        print(
+            f"Using dynamic batching with max_tokens_per_batch={training_args.max_tokens_per_batch}"
+        )
+    else:
+        data_collator = DataCollatorForLanguageModeling(
+            tokenizer=tokenizer,
+            mlm=True,
+            mlm_probability=training_args.mlm_probability.default,
+        )
+        print("Using standard batching")
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
-    trainer = Trainer(
+    # Use custom trainer for dynamic batching
+    trainer = DynamicBatchTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        max_tokens_per_batch=training_args.max_tokens_per_batch,
+        use_dynamic_batching=training_args.use_dynamic_batching,
     )
+    # Inspect first few batches to verify dynamic batching
     dl = trainer.get_train_dataloader()
+    print("\n=== Dynamic Batching Statistics ===")
     for i, batch in enumerate(dl):
-        print(f"Batch {i} max length: {batch['input_ids'].shape[1]}")
-        if i > 5:
+        batch_size = batch["input_ids"].shape[0]
+        max_length = batch["input_ids"].shape[1]
+        total_tokens = batch_size * max_length
+
+        if "batch_stats" in batch:
+            stats = batch["batch_stats"]
+            print(
+                f"Batch {i}: size={batch_size}, max_len={max_length}, "
+                f"total_tokens={total_tokens}, avg_len={stats['avg_length']:.1f}, "
+                f"std={stats['length_std']:.1f}"
+            )
+        else:
+            print(
+                f"Batch {i}: size={batch_size}, max_len={max_length}, total_tokens={total_tokens}"
+            )
+
+        if i >= 10:  # Show more batches to see the variation
             break
+    print("===================================\n")
 
     trainer.add_callback(
         ZeroShotVEPEvaluationCallback(
