@@ -7,6 +7,8 @@ python python_scripts/modernBERT_long_ctxt_length.py \
     --train-dataset-path /Users/benjaminlevy/Library/CloudStorage/OneDrive-PhysicsXLimited/Personal/Research/NYU/data/train_representative \
     --val-dataset-path /Users/benjaminlevy/Library/CloudStorage/OneDrive-PhysicsXLimited/Personal/Research/NYU/data/uniref90_tokenized_8192_small/validation \
     --vep-input-csv /Users/benjaminlevy/Library/CloudStorage/OneDrive-PhysicsXLimited/Personal/Research/NYU/data/uniref90_tokenized_8192_small/clinvar_AA_zero_shot_input.csv \
-    --run-name modernBERT-local-test \
+    --run-name modernBERT-dynamic-batch-test \
     --output-dir ./checkpoints \
-    --disable-wandb
+    --disable-wandb \
+    --max-tokens-per-batch 50000 \
+    --max-steps 100

@@ -1,0 +1,33 @@
+{
+    "configurations": [
+        {
+            "name": "modernBERT_long_ctxt_length",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/python_scripts/modernBERT_long_ctxt_length.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            // Pulled from train_local.sh
+            "args": [
+                "--tokenizer-path",
+                "${workspaceFolder}/char_tokenizer",
+                "--train-dataset-path",
+                "/home/ubuntu/filesystem1/data/train_representative",
+                "--val-dataset-path",
+                "/home/ubuntu/filesystem1/data/uniref90_tokenized_8192_small/validation",
+                "--vep-input-csv",
+                "/home/ubuntu/filesystem1/data/uniref90_tokenized_8192_small/clinvar_AA_zero_shot_input.csv",
+                "--run-name",
+                "modernBERT-local-test",
+                "--output-dir",
+                "${workspaceFolder}/checkpoints",
+                "--disable-wandb",
+                "--max-tokens-per-batch",
+                "10000",
+                "--max-steps",
+                "100"
+            ]
+        }
+    ]
+}
