@@ -6,7 +6,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datasets import load_from_disk
 from transformers import (
-    DataCollatorForLanguageModeling,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
@@ -18,8 +17,11 @@ from gLM.callbacks import (
     ZeroShotVEPEvaluationCallback,
     LossPrintCallback,
 )
+from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
+from gLM.train_utils import CustomTrainer
+
 
 if torch.cuda.is_available():
     print("Using CUDA")
@@ -62,6 +64,7 @@ class DataArguments:
     )
 
 
+@dataclass
 class CustomTrainingArguments(TrainingArguments):
     run_name: str = field(
         default="modernBERT_uniref_tokenized8192",
@@ -97,6 +100,9 @@ class CustomTrainingArguments(TrainingArguments):
     )
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
+    )
+    max_tokens_per_batch: int = field(
+        default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
 
     # Arguments that shouldn't be changed really
@@ -166,14 +172,17 @@ def main():
     # print("95th percentile:", np.percentile(train_ds["length"], 95))
 
     print(training_args.mlm_probability)
-    data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=True, mlm_probability=training_args.mlm_probability
+    data_collator = TruncatingDataCollatorForMLM(
+        tokenizer=tokenizer,
+        mlm=True,
+        mlm_probability=training_args.mlm_probability,
+        max_length=training_args.max_tokens_per_batch,
     )
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
-    trainer = Trainer(
+    trainer = CustomTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
@@ -224,14 +233,14 @@ def main():
     #     plt.savefig("group_by_len.png")
     #     plt.show()
 
-    trainer.add_callback(
-        ZeroShotVEPEvaluationCallback(
-            tokenizer=tokenizer,
-            input_csv=data_args.vep_input_csv,
-            trainer=trainer,
-            eval_every_n_steps=training_args.vep_eval_steps,
-        )
-    )
+    # trainer.add_callback(
+    #     ZeroShotVEPEvaluationCallback(
+    #         tokenizer=tokenizer,
+    #         input_csv=data_args.vep_input_csv,
+    #         trainer=trainer,
+    #         eval_every_n_steps=training_args.vep_eval_steps,
+    #     )
+    # )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
 
