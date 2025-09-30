@@ -1,211 +1,177 @@
-import os, time, argparse, torch, wandb, random
+from dataclasses import dataclass, field
+
 import numpy as np
+import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 from datasets import load_from_disk
-from sklearn.metrics import roc_auc_score
 from transformers import (
-    PreTrainedTokenizerFast,
     DataCollatorForLanguageModeling,
+    HfArgumentParser,
     Trainer,
     TrainingArguments,
-    TrainerCallback,
-    ModernBertForMaskedLM,
-    ModernBertConfig,
 )
 
-class TokenizerLoader:
-    def __init__(self, tokenizer_path):
-        self.tokenizer_path = tokenizer_path
+import wandb
+from gLM.callbacks import (
+    ElapsedTimeLoggerCallback,
+    ZeroShotVEPEvaluationCallback,
+    LossPrintCallback,
+)
+from gLM.models import ProteinBertModel
+from gLM.tokenizers import TokenizerLoader
 
-    def load(self):
-        return PreTrainedTokenizerFast.from_pretrained(self.tokenizer_path)
-
-class ProteinBertModel:
-    def __init__(self, vocab_size, tokenizer):
-        self.vocab_size = vocab_size
-        self.tokenizer = tokenizer
-
-    def build(self):
-        config = ModernBertConfig(
-            vocab_size=self.vocab_size,
-            max_position_embeddings=8192,
-            num_hidden_layers=8,
-            num_attention_heads=8,
-            hidden_size=512,
-            intermediate_size=2048,
-            type_vocab_size=1,
-            hidden_activation="gelu",
-            global_attn_every_n_layers=3,
-            local_attention=512,
-            deterministic_flash_attn=False,
-            global_rope_theta=160000.0,
-            local_rope_theta=10000.0,
-            pad_token_id=self.tokenizer.pad_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-            bos_token_id=self.tokenizer.bos_token_id,
-            cls_token_id=self.tokenizer.cls_token_id,
-            sep_token_id=self.tokenizer.sep_token_id,
-        )
-        return ModernBertForMaskedLM(config)
-
-class ZeroShotVEPEvaluationCallback(TrainerCallback):
-    def __init__(self, tokenizer, input_csv, trainer, max_len=8192, eval_every_n_steps=50000):
-        self.tokenizer = tokenizer
-        self.input_csv = input_csv
-        self.max_len = max_len
-        self.eval_every_n_steps = eval_every_n_steps
-        self.trainer = trainer
-        self.start_time = time.time()
-
-        self.df = pd.read_csv(
-            input_csv,
-            usecols=["sequence", "pos", "ref", "alt", "label"],
-            dtype={"pos": np.int32, "label": np.int8},
-        )
-
-    def compute_log_odds(self, model, seq, pos, ref, alt):
-        if len(seq) > self.max_len or pos >= len(seq) or seq[pos] != ref:
-            return None
-
-        masked_seq = list(seq)
-        masked_seq[pos] = self.tokenizer.mask_token
-        masked_seq = "".join(masked_seq)
-
-        inputs = self.tokenizer(
-            masked_seq, return_tensors="pt", truncation=True, max_length=self.max_len
-        )
-        inputs = {k: v.cuda(non_blocking=True) for k, v in inputs.items()}
-
-        with torch.inference_mode():
-            logits = model(**inputs).logits
-
-        mask_index = (inputs["input_ids"][0] == self.tokenizer.mask_token_id).nonzero(as_tuple=True)[0].item()
-        probs = torch.nn.functional.softmax(logits[0, mask_index], dim=0)
-
-        ref_id = self.tokenizer.convert_tokens_to_ids(ref)
-        alt_id = self.tokenizer.convert_tokens_to_ids(alt)
-        if ref_id is None or alt_id is None:
-            return None
-
-        return (torch.log(probs[alt_id]) - torch.log(probs[ref_id])).item()
-
-    def run_vep_eval(self, model, step_id):
-        if not self.trainer.is_world_process_zero():
-            return
-        elapsed_hours = (time.time() - self.start_time) / 3600
-
-        start_time = time.time()  # Start timing
-        print(f"Running zero-shot VEP evaluation at step {step_id}", flush=True)
-
-        seqs = self.df["sequence"].values
-        poses = self.df["pos"].values
-        refs = self.df["ref"].values
-        alts = self.df["alt"].values
-        labels = self.df["label"].to_numpy(dtype=np.int8)
-
-        n = len(labels)
-        preds = np.full(n, np.nan, dtype=np.float32)
-
-        was_training = model.training
-        model.eval()
-        try:
-            for i in range(n):
-                s = self.compute_log_odds(model, seqs[i], int(poses[i]), refs[i], alts[i])
-                if s is not None:
-                    preds[i] = -float(s)
-        finally:
-            if was_training:
-                model.train()
-
-        mask = ~np.isnan(preds)
-        if mask.sum() >= 10 and (labels[mask].min() != labels[mask].max()):
-            auc = roc_auc_score(labels[mask], preds[mask])
-            print(f"AUC at step {step_id}: {auc:.4f}")
-            wandb.log({"zero_shot_vep_auc": auc, "step": step_id, "elapsed_hours": elapsed_hours})
-        else:
-            print(f"Skipping AUC at step {step_id} due to insufficient data", flush=True)
-
-        elapsed = time.time() - start_time  # End timing
-        print(f"[TIMER] Zero-shot VEP took {elapsed:.2f} seconds", flush=True)
-
-    def on_step_begin(self, args, state, control, model=None, **kwargs):
-        if state.global_step == 0:
-            self.run_vep_eval(model, step_id=state.global_step)
-        return control
-
-    def on_step_end(self, args, state, control, model=None, **kwargs):
-        if state.global_step % self.eval_every_n_steps == 0 and state.global_step > 0:
-            self.run_vep_eval(model, step_id=state.global_step)
-        return control
-
-class ElapsedTimeLoggerCallback(TrainerCallback):
-    def __init__(self):
-        self.start_time = time.time()
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        elapsed_hours = (time.time() - self.start_time) / 3600
-        if logs is not None:
-            logs["elapsed_hours"] = elapsed_hours
-            wandb.log(logs, step=state.global_step)
+if torch.cuda.is_available():
+    print("Using CUDA")
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    print("Using MPS")
+    DEVICE = torch.device("mps")
+else:
+    print("Using CPU")
+    DEVICE = torch.device("cpu")
 
 
-class LossPrintCallback(TrainerCallback):
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        # Print the Trainer-logged loss (usually after accumulation)
-        if logs is not None and "loss" in logs:
-            print(f"\n[LOG STEP {state.global_step}] Trainer-logged loss: {logs['loss']}")
-            print(f"  gradient_accumulation_steps: {args.gradient_accumulation_steps}")
+@dataclass
+class ModelArguments:
+    """Arguments for model configuration."""
+
+    tokenizer_path: str = field(
+        default="char_tokenizer", metadata={"help": "Path to the tokenizer directory"}
+    )
+    max_position_embeddings: int = field(
+        default=8192, metadata={"help": "Maximum sequence length for the model"}
+    )
+
+
+@dataclass
+class DataArguments:
+    """Arguments for data configuration."""
+
+    train_dataset_path: str = field(
+        default="/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train",
+        metadata={"help": "Path to the training dataset"},
+    )
+    val_dataset_path: str = field(
+        default="/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation",
+        metadata={"help": "Path to the validation dataset"},
+    )
+    vep_input_csv: str = field(
+        default="/gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv",
+        metadata={"help": "Path to the VEP evaluation CSV file"},
+    )
+
+
+class CustomTrainingArguments(TrainingArguments):
+    run_name: str = field(
+        default="modernBERT_uniref_tokenized8192",
+        metadata={"help": "Name for the experiment run"},
+    )
+    output_dir: str = field(
+        default="/gpfs/data/brandeslab/model_checkpts",
+        metadata={"help": "Directory to save model checkpoints"},
+    )
+    max_steps: int = field(
+        default=2_000_000, metadata={"help": "Maximum number of training steps"}
+    )
+    per_device_train_batch_size: int = field(
+        default=8, metadata={"help": "Training batch size per device"}
+    )
+    gradient_accumulation_steps: int = field(
+        default=1, metadata={"help": "Number of gradient accumulation steps"}
+    )
+    per_device_eval_batch_size: int = field(
+        default=4, metadata={"help": "Evaluation batch size per device"}
+    )
+    learning_rate: float = field(
+        default=3e-4, metadata={"help": "Learning rate for training"}
+    )
+    logging_steps: int = field(
+        default=1000, metadata={"help": "Number of steps between logging"}
+    )
+    vep_eval_steps: int = field(
+        default=50000, metadata={"help": "Number of steps between VEP evaluations"}
+    )
+    dataloader_num_workers: int = field(
+        default=16, metadata={"help": "Number of dataloader workers"}
+    )
+    mlm_probability: float = field(
+        default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
+    )
+
+    # Arguments that shouldn't be changed really
+    bf16: bool = field(default=True)
+    fp16: bool = field(default=False)
+    dataloader_persistent_workers: bool = field(default=True)
+    dataloader_prefetch_factor: int = field(default=8)
+    eval_strategy: str = field(default="no")  # not running eval
+    logging_strategy: str = field(default="steps")
+    save_strategy: str = field(default="no")
+    report_to: str = field(default="wandb")
+    remove_unused_columns: bool = field(default=False)
+    group_by_length: bool = field(default=True)
+    length_column_name: str = field(default="length")
+
+
+@dataclass
+class WandbArguments:
+    """Arguments for Weights & Bias initialization."""
+
+    wandb_project: str = field(
+        default="huggingface_bert_sweep",
+        metadata={"help": "Weights & Biases project name"},
+    )
+    wandb_entity: str = field(
+        default="sinha-anushka12-na", metadata={"help": "Weights & Biases entity name"}
+    )
+    disable_wandb: bool = field(
+        default=False,
+        metadata={"help": "Whether to disable WandB logging. Defaults to False."},
+    )
 
 
 def main():
-    run_name = "modernBERT_uniref_tokenized8192"
-    wandb.init(project="huggingface_bert_sweep", name=run_name, entity="sinha-anushka12-na")
+    # Parse arguments
+    parser = HfArgumentParser(
+        (ModelArguments, DataArguments, CustomTrainingArguments, WandbArguments)
+    )
+    model_args, data_args, training_args, wandb_args = (
+        parser.parse_args_into_dataclasses()
+    )
 
-    tokenizer = TokenizerLoader("char_tokenizer").load()
+    # Initialize wandb
+    if not wandb_args.disable_wandb:
+        wandb.init(
+            project=wandb_args.wandb_project,
+            name=training_args.run_name,
+            entity=wandb_args.wandb_entity,
+        )
+
+    # Load tokenizer
+    tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
     pad_id = tokenizer.pad_token_id
     print("Tokenizer vocab size:", tokenizer.vocab_size)
 
+    # Build model
     model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
-    model.cuda()
+    model.to(device=DEVICE)
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-
-    train_ds = load_from_disk("/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train")
-    val_ds = load_from_disk("/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation")
+    # Load pre-tokenized datasets
+    train_ds = load_from_disk(data_args.train_dataset_path)
+    val_ds = load_from_disk(data_args.val_dataset_path)
 
     # print("Max train length:", max(train_ds["length"]))
     # print("99th percentile:", np.percentile(train_ds["length"], 99))
     # print("95th percentile:", np.percentile(train_ds["length"], 95))
 
+    print(training_args.mlm_probability)
     data_collator = DataCollatorForLanguageModeling(
-        tokenizer=tokenizer,
-        mlm=True,
-        mlm_probability=0.15
+        tokenizer=tokenizer, mlm=True, mlm_probability=training_args.mlm_probability
     )
 
-    training_args = TrainingArguments(
-        output_dir=f"/gpfs/data/brandeslab/model_checkpts/{run_name}",
-        max_steps=2_000_000,
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=1,
-        per_device_eval_batch_size=4,
-        bf16=True,
-        fp16=False,
-        dataloader_num_workers=16,
-        dataloader_persistent_workers=True,
-        dataloader_prefetch_factor=8,
-        eval_strategy="no",
-        logging_strategy="steps",
-        logging_steps=1000,
-        save_strategy="no",
-        report_to="wandb",
-        run_name=run_name,
-        learning_rate=3e-4,
-        remove_unused_columns=False,
-        group_by_length=True,
-        length_column_name="length"
-    )
+    # Update training arguments with parsed values
+    training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
     trainer = Trainer(
         model=model,
@@ -226,9 +192,7 @@ def main():
     #     outputs = model(input_ids=batch["input_ids"].cuda(), labels=batch["labels"].cuda())
     #     print("One batch loss:", outputs.loss.item())
     #     break  # Only check the first batch
-            
 
-    
     # batch_lens = []
 
     # print("\nInspecting first 20 batches...\n")
@@ -260,16 +224,19 @@ def main():
     #     plt.savefig("group_by_len.png")
     #     plt.show()
 
-    trainer.add_callback(ZeroShotVEPEvaluationCallback(
-        tokenizer=tokenizer,
-        input_csv="/gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv",
-        trainer=trainer,
-        eval_every_n_steps=50000
-    ))
+    trainer.add_callback(
+        ZeroShotVEPEvaluationCallback(
+            tokenizer=tokenizer,
+            input_csv=data_args.vep_input_csv,
+            trainer=trainer,
+            eval_every_n_steps=training_args.vep_eval_steps,
+        )
+    )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
 
     trainer.train()
+
 
 if __name__ == "__main__":
     main()
