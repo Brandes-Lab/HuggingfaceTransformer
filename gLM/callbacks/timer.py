@@ -1,9 +1,7 @@
 import time
 
 import wandb
-from transformers import (
-    TrainerCallback,
-)
+from transformers import TrainerCallback
 
 
 class ElapsedTimeLoggerCallback(TrainerCallback):

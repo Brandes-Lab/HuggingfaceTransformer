@@ -27,18 +27,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
             dtype={"pos": np.int32, "label": np.int8},
         )
 
-        # seed = int(getattr(trainer.args, "seed", 42))
-        # df = pd.read_csv(
-        #     input_csv,
-        #     usecols=["sequence", "pos", "ref", "alt", "label"],
-        #     dtype={"pos": np.int32, "label": np.int8},
-        # )
-        # # keep exactly 5k random rows
-        # n = min(5000, len(df))
-        # self.df = df.sample(n=n, random_state=seed).reset_index(drop=True)
-
     def compute_log_odds(self, model, seq, pos, ref, alt):
-        # skip if > max_len or ref mismatch
         if len(seq) > self.max_len or pos >= len(seq) or seq[pos] != ref:
             return None
 
@@ -72,6 +61,8 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         if not self.trainer.is_world_process_zero():
             return
         elapsed_hours = (time.time() - self.start_time) / 3600
+
+        start_time = time.time()  # Start timing
         print(f"Running zero-shot VEP evaluation at step {step_id}", flush=True)
 
         seqs = self.df["sequence"].values
@@ -111,6 +102,9 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
             print(
                 f"Skipping AUC at step {step_id} due to insufficient data", flush=True
             )
+
+        elapsed = time.time() - start_time  # End timing
+        print(f"[TIMER] Zero-shot VEP took {elapsed:.2f} seconds", flush=True)
 
     def on_step_begin(self, args, state, control, model=None, **kwargs):
         if state.global_step == 0:

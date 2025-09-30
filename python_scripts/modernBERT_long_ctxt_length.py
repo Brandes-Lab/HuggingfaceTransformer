@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import torch
+import pandas as pd
+import matplotlib.pyplot as plt
 from datasets import load_from_disk
 from transformers import (
     DataCollatorForLanguageModeling,
@@ -11,7 +13,11 @@ from transformers import (
 )
 
 import wandb
-from gLM.callbacks import ElapsedTimeLoggerCallback, ZeroShotVEPEvaluationCallback
+from gLM.callbacks import (
+    ElapsedTimeLoggerCallback,
+    ZeroShotVEPEvaluationCallback,
+    LossPrintCallback,
+)
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
 
@@ -69,10 +75,10 @@ class CustomTrainingArguments(TrainingArguments):
         default=2_000_000, metadata={"help": "Maximum number of training steps"}
     )
     per_device_train_batch_size: int = field(
-        default=16, metadata={"help": "Training batch size per device"}
+        default=8, metadata={"help": "Training batch size per device"}
     )
     gradient_accumulation_steps: int = field(
-        default=16, metadata={"help": "Number of gradient accumulation steps"}
+        default=1, metadata={"help": "Number of gradient accumulation steps"}
     )
     per_device_eval_batch_size: int = field(
         default=4, metadata={"help": "Evaluation batch size per device"}
@@ -97,7 +103,7 @@ class CustomTrainingArguments(TrainingArguments):
     bf16: bool = field(default=True)
     fp16: bool = field(default=False)
     dataloader_persistent_workers: bool = field(default=True)
-    dataloader_prefetch_factor: int = field(default=2)
+    dataloader_prefetch_factor: int = field(default=8)
     eval_strategy: str = field(default="no")  # not running eval
     logging_strategy: str = field(default="steps")
     save_strategy: str = field(default="no")
@@ -143,6 +149,7 @@ def main():
 
     # Load tokenizer
     tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
+    pad_id = tokenizer.pad_token_id
     print("Tokenizer vocab size:", tokenizer.vocab_size)
 
     # Build model
@@ -154,9 +161,9 @@ def main():
     train_ds = load_from_disk(data_args.train_dataset_path)
     val_ds = load_from_disk(data_args.val_dataset_path)
 
-    print("Max train length:", max(train_ds["length"]))
-    print("99th percentile:", np.percentile(train_ds["length"], 99))
-    print("95th percentile:", np.percentile(train_ds["length"], 95))
+    # print("Max train length:", max(train_ds["length"]))
+    # print("99th percentile:", np.percentile(train_ds["length"], 99))
+    # print("95th percentile:", np.percentile(train_ds["length"], 95))
 
     print(training_args.mlm_probability)
     data_collator = DataCollatorForLanguageModeling(
@@ -174,11 +181,48 @@ def main():
         tokenizer=tokenizer,
         data_collator=data_collator,
     )
-    dl = trainer.get_train_dataloader()
-    for i, batch in enumerate(dl):
-        print(f"Batch {i} max length: {batch['input_ids'].shape[1]}")
-        if i > 5:
-            break
+
+    # # === Inspect batches before training ===
+    # dl = trainer.get_train_dataloader()
+    # for batch in dl:
+    #     print("input_ids", batch["input_ids"][0])
+    #     print("labels", batch["labels"][0])
+    #     print("PAD token id:", pad_id)
+    #     # Check loss calculation
+    #     outputs = model(input_ids=batch["input_ids"].cuda(), labels=batch["labels"].cuda())
+    #     print("One batch loss:", outputs.loss.item())
+    #     break  # Only check the first batch
+
+    # batch_lens = []
+
+    # print("\nInspecting first 20 batches...\n")
+    # for i, batch in enumerate(dl):
+    #     input_ids = batch["input_ids"]
+    #     if isinstance(input_ids, torch.Tensor):
+    #         lengths = (input_ids != pad_id).sum(dim=1).tolist()
+    #         min_len = min(lengths)
+    #         max_len = max(lengths)
+    #         batch_lens.append((i, min_len, max_len))
+
+    #         print(f"Batch {i:03d} → min length = {min_len}, max length = {max_len}, batch size = {len(lengths)}")
+
+    #     if i >= 100:
+    #         break
+
+    # # === Optional: Plot Length Spread ===
+    # if batch_lens:
+    #     batch_ids, min_lens, max_lens = zip(*batch_lens)
+    #     plt.figure(figsize=(10, 4))
+    #     plt.plot(batch_ids, max_lens, label='Max length')
+    #     plt.plot(batch_ids, min_lens, label='Min length')
+    #     plt.fill_between(batch_ids, min_lens, max_lens, alpha=0.2, label='Length spread')
+    #     plt.xlabel("Batch Index")
+    #     plt.ylabel("Sequence Length")
+    #     plt.title("Min/Max Token Length per Batch (after group_by_length)")
+    #     plt.legend()
+    #     plt.tight_layout()
+    #     plt.savefig("group_by_len.png")
+    #     plt.show()
 
     trainer.add_callback(
         ZeroShotVEPEvaluationCallback(
@@ -189,6 +233,8 @@ def main():
         )
     )
     trainer.add_callback(ElapsedTimeLoggerCallback())
+    trainer.add_callback(LossPrintCallback())
+
     trainer.train()
 
 
