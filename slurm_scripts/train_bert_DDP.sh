@@ -63,4 +63,4 @@ torchrun \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
-    python_scripts/modernBERT_ddp_old.py
+    python_scripts/modernBERT_ddp_dynamic_batch.py
