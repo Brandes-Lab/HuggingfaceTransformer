@@ -10,6 +10,5 @@ python python_scripts/modernBERT_long_ctxt_length.py \
     --vep-input-csv /home/ubuntu/filesystem1/data/uniref90_tokenized_8192_small/clinvar_AA_zero_shot_input.csv \
     --run-name modernBERT-dynamic-batch-test \
     --output-dir ./checkpoints \
-    --max-tokens-per-batch 36000 \
     --max-steps 2000000 \
-    --gradient-accumulation-steps 1
+    --gradient-accumulation-steps 4

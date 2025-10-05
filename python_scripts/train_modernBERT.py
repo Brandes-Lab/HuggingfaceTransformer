@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import os
 
 import numpy as np
 import torch
@@ -33,6 +34,11 @@ elif torch.backends.mps.is_available():
 else:
     print("Using CPU")
     DEVICE = torch.device("cpu")
+
+
+def print_rank0(*args, **kwargs):
+    if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+        print(*args, **kwargs)
 
 
 @dataclass
@@ -109,6 +115,12 @@ class CustomTrainingArguments(TrainingArguments):
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
 
+    ## DDP arguments
+    local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)
+    ddp_backend = ("nccl",)
+    ddp_timeout = (3000,)
+    ddp_find_unused_parameters = False
+
     # Arguments that shouldn't be changed really
     bf16: bool = field(default=True)
     fp16: bool = field(default=False)
@@ -149,23 +161,37 @@ def main():
         parser.parse_args_into_dataclasses()
     )
 
+    print(
+        f"[Rank {training_args.local_rank}] MASTER_ADDR: {os.environ.get('MASTER_ADDR')}"
+    )
+    print(
+        f"[Rank {training_args.local_rank}] MASTER_PORT: {os.environ.get('MASTER_PORT')}"
+    )
+    print(
+        f"[Rank {training_args.local_rank}] NCCL_TIMEOUT: {os.environ.get('NCCL_TIMEOUT')}"
+    )
+
     # Initialize wandb
-    if not wandb_args.disable_wandb:
+    if not wandb_args.disable_wandb and training_args.local_rank == 0:
         wandb.init(
             project=wandb_args.wandb_project,
             name=training_args.run_name,
             entity=wandb_args.wandb_entity,
         )
+    else:
+        wandb.init(mode="disabled")
 
     # Load tokenizer
     tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
     pad_id = tokenizer.pad_token_id
-    print("Tokenizer vocab size:", tokenizer.vocab_size)
+    print_rank0("Tokenizer vocab size:", tokenizer.vocab_size)
 
     # Build model
     model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
-    model.to(device=DEVICE)
-    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    model.gradient_checkpointing_enable()
+    model.to(training_args.local_rank)
+    # model.to(device=DEVICE)
+    print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
     # Load pre-tokenized datasets
     train_ds = load_from_disk(data_args.train_dataset_path)
@@ -252,14 +278,14 @@ def main():
     #     plt.savefig("group_by_len.png")
     #     plt.show()
 
-    # trainer.add_callback(
-    #     ZeroShotVEPEvaluationCallback(
-    #         tokenizer=tokenizer,
-    #         input_csv=data_args.vep_input_csv,
-    #         trainer=trainer,
-    #         eval_every_n_steps=training_args.vep_eval_steps,
-    #     )
-    # )
+    trainer.add_callback(
+        ZeroShotVEPEvaluationCallback(
+            tokenizer=tokenizer,
+            input_csv=data_args.vep_input_csv,
+            trainer=trainer,
+            eval_every_n_steps=training_args.vep_eval_steps,
+        )
+    )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
 

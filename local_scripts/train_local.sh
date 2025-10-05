@@ -10,5 +10,4 @@ python python_scripts/modernBERT_long_ctxt_length.py \
     --run-name modernBERT-dynamic-batch-test \
     --output-dir ./checkpoints \
     --disable-wandb \
-    --max-tokens-per-batch 50000 \
-    --max-steps 100
+    --max-steps 100 \
