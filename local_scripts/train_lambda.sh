@@ -11,4 +11,5 @@ python python_scripts/modernBERT_long_ctxt_length.py \
     --run-name modernBERT-dynamic-batch-test \
     --output-dir ./checkpoints \
     --max-steps 2000000 \
-    --gradient-accumulation-steps 4
+    --gradient-accumulation-steps 4 \
+    --dynamic-batching

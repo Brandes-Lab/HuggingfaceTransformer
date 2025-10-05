@@ -22,7 +22,7 @@ from gLM.callbacks import (
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
-from gLM.train_utils import CustomTrainer
+from gLM.train_utils import CustomBatchSizeTrainer
 
 
 if torch.cuda.is_available():
@@ -105,13 +105,6 @@ class CustomTrainingArguments(TrainingArguments):
     dataloader_num_workers: int = field(
         default=16, metadata={"help": "Number of dataloader workers"}
     )
-
-    dataloader_persistent_workers: bool = field(default=True, 
-        metadata={"help": "Number of dataloader_persistent_workers"})
-
-    dataloader_prefetch_factor: int = field(default=2, 
-        metadata={"help": "Number of dataloader_prefetch_factor"})
-    
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
@@ -131,11 +124,11 @@ class CustomTrainingArguments(TrainingArguments):
     # Arguments that shouldn't be changed really
     bf16: bool = field(default=True)
     fp16: bool = field(default=False)
-    eval_strategy: str = field(default="steps")  # not running eval
-    eval_steps: int = field(default=50000)
+    dataloader_persistent_workers: bool = field(default=True)
+    dataloader_prefetch_factor: int = field(default=8)
+    eval_strategy: str = field(default="no")  # not running eval
     logging_strategy: str = field(default="steps")
-    save_strategy: str = field(default="steps")
-    save_steps: int= field(default=50000)
+    save_strategy: str = field(default="no")
     report_to: str = field(default="wandb")
     remove_unused_columns: bool = field(default=False)
     group_by_length: bool = field(default=True)
@@ -147,7 +140,7 @@ class WandbArguments:
     """Arguments for Weights & Bias initialization."""
 
     wandb_project: str = field(
-        default="modernBERT_training",
+        default="huggingface_bert_sweep",
         metadata={"help": "Weights & Biases project name"},
     )
     wandb_entity: str = field(
@@ -213,14 +206,19 @@ def main():
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=True,
+        mlm_probability=training_args.mlm_probability,
+    )
     if training_args.dynamic_batching:
-        data_collator = TruncatingDataCollatorForMLM(
-            tokenizer=tokenizer,
-            mlm=True,
-            mlm_probability=training_args.mlm_probability,
-            max_length=training_args.max_tokens_per_batch,
-        )
-        trainer = CustomTrainer(
+        # data_collator = TruncatingDataCollatorForMLM(
+        #     tokenizer=tokenizer,
+        #     mlm=True,
+        #     mlm_probability=training_args.mlm_probability,
+        #     max_length=training_args.max_tokens_per_batch,
+        # )
+        trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
             train_dataset=train_ds,
@@ -229,11 +227,6 @@ def main():
             data_collator=data_collator,
         )
     else:
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=True,
-            mlm_probability=training_args.mlm_probability,
-        )
         trainer = Trainer(
             model=model,
             args=training_args,
