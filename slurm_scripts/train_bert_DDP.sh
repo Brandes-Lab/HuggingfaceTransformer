@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_modernBERT_2GPU
+#SBATCH --job-name=train_modernBERT
 #SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:2
 #SBATCH --nodes=1
@@ -65,4 +65,12 @@ torchrun \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
-    python_scripts/modernBERT_ddp.py
+    python_scripts/train_modernBERT.py \
+    --run-name modernBERT34M \
+    --tokenizer-path ./char_tokenizer \
+    --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
+    --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
+    --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+    --output-dir /gpfs/data/brandeslab/model_checkpts \
+    --max-steps 2000000 \
+    --gradient-accumulation-steps 4

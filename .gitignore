@@ -149,7 +149,6 @@ data/
 datasets/
 *.csv
 *.tsv
-*.json
 *.jsonl
 *.parquet
 *.feather
@@ -166,7 +165,6 @@ slurm-*.err
 *.err
 
 # IDE and editor files
-.vscode/
 .idea/
 *.swp
 *.swo
