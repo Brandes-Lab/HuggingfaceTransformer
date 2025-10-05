@@ -114,6 +114,9 @@ class CustomTrainingArguments(TrainingArguments):
     max_tokens_per_batch: int = field(
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
+    shuffle_batches: bool = field(
+        default=True, metadata={"help": "Whether to shuffle batches after bucketing by length"}
+    )
 
     ## DDP arguments
     local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)

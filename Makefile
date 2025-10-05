@@ -2,6 +2,9 @@
 
 .PHONY: env env-uv install install-uv clean clean-uv
 
+install-uv:
+	curl -LsSf https://astral.sh/uv/install.sh | sh
+
 # Create conda environment
 env:
 	conda env create -f environment.yml
@@ -12,11 +15,11 @@ env-uv:
 	uv pip install -r requirements.txt
 
 # Install/update conda environment
-install:
+install-env:
 	conda env update -f environment.yml --prune
 
 # Install/update uv environment
-install-uv:
+install-env-uv: install-uv
 	uv pip install -r requirements.txt
 
 # Remove conda environment
