@@ -105,6 +105,13 @@ class CustomTrainingArguments(TrainingArguments):
     dataloader_num_workers: int = field(
         default=16, metadata={"help": "Number of dataloader workers"}
     )
+
+    dataloader_persistent_workers: bool = field(default=True, 
+        metadata={"help": "Number of dataloader_persistent_workers"})
+
+    dataloader_prefetch_factor: int = field(default=2, 
+        metadata={"help": "Number of dataloader_prefetch_factor"})
+    
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
@@ -124,11 +131,11 @@ class CustomTrainingArguments(TrainingArguments):
     # Arguments that shouldn't be changed really
     bf16: bool = field(default=True)
     fp16: bool = field(default=False)
-    dataloader_persistent_workers: bool = field(default=True)
-    dataloader_prefetch_factor: int = field(default=8)
-    eval_strategy: str = field(default="no")  # not running eval
+    eval_strategy: str = field(default="steps")  # not running eval
+    eval_steps: int = field(default=50000)
     logging_strategy: str = field(default="steps")
-    save_strategy: str = field(default="no")
+    save_strategy: str = field(default="steps")
+    save_steps: int= field(default=50000)
     report_to: str = field(default="wandb")
     remove_unused_columns: bool = field(default=False)
     group_by_length: bool = field(default=True)
@@ -140,7 +147,7 @@ class WandbArguments:
     """Arguments for Weights & Bias initialization."""
 
     wandb_project: str = field(
-        default="huggingface_bert_sweep",
+        default="modernBERT_training",
         metadata={"help": "Weights & Biases project name"},
     )
     wandb_entity: str = field(
