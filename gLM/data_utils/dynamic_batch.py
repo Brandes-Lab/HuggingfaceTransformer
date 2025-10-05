@@ -74,26 +74,27 @@ def _get_length_adaptive_batches(
             return 64
 
     batched_indices = []
+    current_batch = []
     for idx in indices:
         length = lengths[idx]
         target_bs = target_bs_for_length(length)
 
         if current_target is None:
-            batch = []
             current_target = target_bs
-            print_rank0(
-                f"[BatchSampler] Starting new bucket: batch_size={current_target} (seq len {length})"
-            )
+            # print_rank0(
+            #     f"[BatchSampler] Starting new bucket: batch_size={current_target} (seq len {length})"
+            # )
 
-        batch.append(idx)
-        if len(batch) == current_target:
-            print_rank0("[BatchSampler] Yielding batch")
-            batched_indices.append(batch)
+        current_batch.append(idx)
+        if len(current_batch) == current_target:
+            # print_rank0("[BatchSampler] Yielding batch")
+            batched_indices.append(current_batch)
             current_target = None
+            current_batch = []
 
     # Flush leftovers
-    if batch and current_target is not None and len(batch) < current_target:
-        batched_indices.append(batch)
+    if current_batch and current_target is not None and len(current_batch) < current_target:
+        batched_indices.append(current_batch)
 
     if shuffle:
         random.shuffle(batched_indices)
@@ -136,12 +137,13 @@ class DynamicBatchSampler(Sampler):
 
 
 class LengthAdaptiveBatchSampler(Sampler):
-    def __init__(self, dataset, length_field="length"):
+    def __init__(self, dataset, length_field="length", shuffle: bool = True):
         self.dataset = dataset
         self.lengths = dataset[length_field]
         self.sorted_indices = sorted(
             range(len(self.lengths)), key=lambda i: -self.lengths[i]
         )
+        self.shuffle = shuffle
 
         # DDP setup
         if is_initialized():
@@ -154,9 +156,9 @@ class LengthAdaptiveBatchSampler(Sampler):
     def __iter__(self):
         # shard indices across ranks
         indices = self.sorted_indices[self.rank :: self.world_size]
-        lengths = self.lengths[indices]
+        lengths = self.lengths
 
-        batched_indices = _get_length_adaptive_batches(indices, lengths, shuffle=True)
+        batched_indices = _get_length_adaptive_batches(indices, lengths, shuffle=self.shuffle)
         for batch in batched_indices:
             yield batch
 
