@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_modernBERT_ddp
+#SBATCH --job-name=train_modernBERT_2GPU
 #SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:2
 #SBATCH --nodes=1
@@ -50,6 +50,8 @@ echo "Caching to: $HF_HOME"
 export WANDB_PROJECT=modernBERT_training
 export WANDB_API_KEY=ae9049d442db2ba3fa77f7928c1dae68353b3762
 
+export TOKENIZERS_PARALLELISM=false
+
 # === Change to project directory ===
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
@@ -63,4 +65,4 @@ torchrun \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
-    python_scripts/modernBERT_ddp_dynamic_batch.py
+    python_scripts/modernBERT_ddp.py

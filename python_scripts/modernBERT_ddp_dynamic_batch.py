@@ -322,7 +322,7 @@ def main():
     model = model.to(rank)
 
     param_count = sum(p.numel() for p in model.parameters())
-    run_name = f"modernBERT_{round(param_count/1e6)}M_dynamic_batch"
+    run_name = f"modernBERT_{round(param_count/1e6)}M_dynamic_batch_ga_4"
 
     if rank == 0:
         wandb.init(project="modernBERT_training", name=run_name, entity="sinha-anushka12-na")
@@ -341,8 +341,8 @@ def main():
         output_dir=f"/gpfs/data/brandeslab/fake_model_checkpts/{run_name}",
         # max_steps=2_000_000,
         num_train_epochs=1,
-        per_device_train_batch_size=1,  # dummy, real size is controlled by sampler
-        gradient_accumulation_steps=1,  
+        per_device_train_batch_size=1,  # real size is controlled by sampler
+        gradient_accumulation_steps=32,  
         per_device_eval_batch_size=4,
         
         bf16=True,
