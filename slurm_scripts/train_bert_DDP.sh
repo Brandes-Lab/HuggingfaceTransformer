@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=train_modernBERT
 #SBATCH --partition=a100_short
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:a100:1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=100G
-#SBATCH --time=03-00:00:00
+#SBATCH --time=04:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
@@ -60,17 +60,19 @@ export MASTER_PORT=$((29500 + RANDOM % 1000))
 
 torchrun \
     --nnodes=1 \
-    --nproc-per-node=2 \
+    --nproc-per-node=1 \
     --master_addr=${MASTER_ADDR} \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
     python_scripts/train_modernBERT.py \
-    --run-name modernBERT34M \
+    --run-name modernBERT34M_dynamic_batch \
     --tokenizer-path ./char_tokenizer \
-    --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
+    --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train_representative \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
     --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
     --max-steps 2000000 \
-    --gradient-accumulation-steps 4
+    --group_by_length=False \
+    --gradient-accumulation-steps 32 \
+    --dynamic-batching

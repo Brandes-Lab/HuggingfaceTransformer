@@ -140,7 +140,7 @@ class WandbArguments:
     """Arguments for Weights & Bias initialization."""
 
     wandb_project: str = field(
-        default="huggingface_bert_sweep",
+        default="modernBERT_training",
         metadata={"help": "Weights & Biases project name"},
     )
     wandb_entity: str = field(
