@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=zero_shot_vep_modernBERT_34M
-#SBATCH --partition=a100_long
+#SBATCH --job-name=dms_modernBERT_34M
+#SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=28-00:00:00
+#SBATCH --time=03-00:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
@@ -30,6 +30,7 @@ echo "Using MASTER_PORT=$MASTER_PORT"
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
 
-torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/zero_shot_vep.py --model_name "$1"
-# sbatch slurm_scripts/zero_shot_vep.sh modernBERT_34M
+torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/dms_benchmark.py --model_name "$1"
+# sbatch slurm_scripts/dms.sh modernBERT_34M
+
 

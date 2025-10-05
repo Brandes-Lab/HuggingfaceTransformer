@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=train_modernBERT_ddp
-#SBATCH --partition=a100_long
+#SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:2
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=100G
-#SBATCH --time=28-00:00:00
+#SBATCH --time=03-00:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
@@ -49,18 +49,12 @@ echo "Caching to: $HF_HOME"
 # === Weights & Biases config ===
 export WANDB_PROJECT=modernBERT_training
 export WANDB_API_KEY=ae9049d442db2ba3fa77f7928c1dae68353b3762
-# f46013ff59ad00162f0adb0eb8dd03811505fbc6
+
 # === Change to project directory ===
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
 # === Use a random master port for torch distributed ===
 export MASTER_PORT=$((29500 + RANDOM % 1000))
-echo "Using MASTER_PORT=$MASTER_PORT"
-
-# export NCCL_TIMEOUT=3600
-# export TORCH_NCCL_BLOCKING_WAIT=1
-# export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=3000
-
 
 torchrun \
     --nnodes=1 \
@@ -69,4 +63,4 @@ torchrun \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
-    python_scripts/modernBERT_ddp.py
+    python_scripts/modernBERT_ddp_dynamic_batch.py
