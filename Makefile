@@ -28,10 +28,10 @@ clean-uv:
 	rm -rf .venv
 
 lambda-gh-auth:
-	sudo apt install gh &&
+	sudo apt install gh && \
 	gh auth login
 
 lambda-git-config:
-	git config --global user.name "Benjamin Levy" &&
-	git config --global user.email "benjaminjslevy@gmail.com" &&
+	git config --global user.name "Benjamin Levy" && \
+	git config --global user.email "benjaminjslevy@gmail.com" && \
 	git config push.autoSetupRemote true
