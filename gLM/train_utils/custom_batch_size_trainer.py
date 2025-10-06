@@ -1,3 +1,4 @@
+# type: ignore
 from transformers import Trainer
 from gLM.data_utils import LengthAdaptiveBatchSampler
 from torch.utils.data import DataLoader
