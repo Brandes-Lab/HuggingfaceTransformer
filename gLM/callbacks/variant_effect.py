@@ -1,13 +1,11 @@
+# type: ignore
 import time
-
 import numpy as np
 import pandas as pd
 import torch
 import wandb
 from sklearn.metrics import roc_auc_score
-from transformers import (
-    TrainerCallback,
-)
+from transformers import TrainerCallback
 from torch.distributed import is_initialized, get_rank, barrier, all_gather_object
 
 
@@ -19,7 +17,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         trainer,
         max_len=8192,
         eval_every_n_steps=10000,
-        batch_size=8,
+        batch_size=6,
     ):
         self.tokenizer = tokenizer
         self.input_csv = input_csv
@@ -36,31 +34,24 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         )
 
     def compute_log_odds_batch(self, model, seqs, poses, refs, alts):
-        masked_seqs = []
-        valid_indices = []
-
+        valid_data = []
         for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
-            if len(seq) > self.max_len:
-                continue
-            if pos >= len(seq) or seq[pos] != ref:
-                continue
+            if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
+                masked_seq = seq[:pos] + self.tokenizer.mask_token + seq[pos + 1:]
+                valid_data.append((i, masked_seq, ref, alt))
 
-            masked_seq = list(seq)
-            masked_seq[pos] = self.tokenizer.mask_token
-            masked_seqs.append("".join(masked_seq))
-            valid_indices.append(i)
-
-        if not masked_seqs:
+        if not valid_data:
             return [None] * len(seqs)
 
+        indices, masked_seqs, valid_refs, valid_alts = zip(*valid_data)
+
         inputs = self.tokenizer(
-            masked_seqs,
+            list(masked_seqs),
             return_tensors="pt",
             truncation=True,
             padding=True,
             max_length=self.max_len,
         )
-
         device = next(model.parameters()).device
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
@@ -71,10 +62,12 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         mask_indices = (inputs["input_ids"] == mask_token_id).nonzero(as_tuple=False)
 
         results = [None] * len(seqs)
-        for idx_in_batch, (batch_idx, token_idx) in enumerate(mask_indices):
-            input_idx = valid_indices[batch_idx]
-            ref_id = self.tokenizer.convert_tokens_to_ids(refs[input_idx])
-            alt_id = self.tokenizer.convert_tokens_to_ids(alts[input_idx])
+        for (batch_idx, token_idx), input_idx in zip(mask_indices, indices):
+            ref_token = valid_refs[batch_idx]
+            alt_token = valid_alts[batch_idx]
+
+            ref_id = self.tokenizer.convert_tokens_to_ids(ref_token)
+            alt_id = self.tokenizer.convert_tokens_to_ids(alt_token)
             if ref_id is None or alt_id is None:
                 continue
 
@@ -91,15 +84,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
             if torch.distributed.is_initialized()
             else 1
         )
-        print(f"[Rank {rank}] World Size: {world_size}", flush=True)
-
-        elapsed_hours = (time.time() - self.start_time) / 3600
-        start_time = time.time()
-
-        print(
-            f"[Rank {rank}] Running zero-shot VEP evaluation at step {step_id}",
-            flush=True,
-        )
+        print(f"[Rank {rank}] Starting zero-shot VEP eval @ step {step_id}", flush=True)
 
         seqs = self.df["sequence"].values
         poses = self.df["pos"].values
@@ -114,7 +99,9 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
 
         was_training = model.training
         model.eval()
-        try:
+        start_time = time.time()
+
+        with torch.no_grad():
             for i in range(0, len(shard_indices), self.batch_size):
                 batch_ids = shard_indices[i : i + self.batch_size]
                 batch_seqs = seqs[batch_ids]
@@ -130,28 +117,24 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
                     if score is not None:
                         preds_shard[i + j] = -float(score)
 
-                if (i + self.batch_size) % 5000 < self.batch_size:
-                    print(
-                        f"[Rank {rank}] Evaluation progress: {i + self.batch_size}/{len(shard_indices)}",
-                        flush=True,
-                    )
-        finally:
-            if was_training:
-                model.train()
+                if i % 20000 == 0:
+                    print(f"[Rank {rank}] Progress: {i}/{len(shard_indices)}", flush=True)
 
-        # DDP all-gather logic
-        gathered_preds = [None for _ in range(world_size)]
-        gathered_labels = [None for _ in range(world_size)]
-        gathered_indices = [None for _ in range(world_size)]
+        if was_training:
+            model.train()
 
-        all_gather_object(gathered_preds, preds_shard.tolist())
-        all_gather_object(gathered_labels, labels[shard_indices].tolist())
-        all_gather_object(gathered_indices, shard_indices.tolist())
+        # All-gather combined structure
+        gathered_data = [None for _ in range(world_size)]
+        local_data = list(
+            zip(shard_indices.tolist(), preds_shard.tolist(), labels[shard_indices].tolist())
+        )
+        all_gather_object(gathered_data, local_data)
 
         if rank == 0:
             flat_preds = np.full(n, np.nan, dtype=np.float32)
-            for preds, idxs in zip(gathered_preds, gathered_indices):
-                flat_preds[np.array(idxs)] = np.array(preds)
+            for data in gathered_data:
+                for idx, pred, _ in data:
+                    flat_preds[idx] = pred
 
             mask = ~np.isnan(flat_preds)
             if mask.sum() >= 10 and (labels[mask].min() != labels[mask].max()):
@@ -161,17 +144,13 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
                     {
                         "zero_shot_vep_auc": auc,
                         "step": step_id,
-                        "elapsed_hours": elapsed_hours,
+                        "elapsed_hours": (time.time() - self.start_time) / 3600,
                     }
                 )
             else:
-                print(
-                    f"Skipping AUC at step {step_id} due to insufficient data",
-                    flush=True,
-                )
+                print(f"Skipping AUC at step {step_id} due to insufficient data", flush=True)
 
-            elapsed = time.time() - start_time
-            print(f"[TIMER] Zero-shot VEP took {elapsed:.2f} seconds", flush=True)
+            print(f"[TIMER] VEP eval took {time.time() - start_time:.2f} seconds", flush=True)
 
         if is_initialized():
             barrier()

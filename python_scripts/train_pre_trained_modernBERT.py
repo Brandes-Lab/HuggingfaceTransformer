@@ -12,6 +12,7 @@ from transformers import (
     Trainer,
     TrainingArguments,
     DataCollatorForLanguageModeling,
+    ModernBertForMaskedLM
 )
 
 import wandb
@@ -122,6 +123,11 @@ class CustomTrainingArguments(TrainingArguments):
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
 
+    # Path to the pre-trained modernBERT checkpoint
+    ckpt_path: str = field(
+        default="/gpfs/data/brandeslab/Models/modernBERT_1B/checkpoint-1000000", metadata={"help": "Path to the pre-trained modernBERT checkpoint"}
+    )
+
     ## DDP arguments
     local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)
     ddp_backend = ("nccl",)
@@ -193,13 +199,18 @@ def main():
     pad_id = tokenizer.pad_token_id
     print_rank0("Tokenizer vocab size:", tokenizer.vocab_size)
 
-    # Build model
-    model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
+    # Load pre-trained model
+    print_rank0("Loading pre-trained model from:", training_args.ckpt_path)
+    try:
+        model = ModernBertForMaskedLM.from_pretrained(training_args.ckpt_path)
+    except Exception as e:
+        print_rank0(f"⚠️ Failed to load using from_pretrained: {e}")
+
     model.gradient_checkpointing_enable()
     model.to(training_args.local_rank)
     # model.to(device=DEVICE)
     print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-    print("Hidden size actually used:", model.config.hidden_size)
+    print_rank0("Hidden size actually used:", model.config.hidden_size)
 
     # Load pre-tokenized datasets
     train_ds = load_from_disk(data_args.train_dataset_path)
@@ -209,9 +220,6 @@ def main():
     # Select first 500k after shuffling
     val_subset = val_ds.select(range(500_000))
 
-    # print("Max train length:", max(train_ds["length"]))
-    # print("99th percentile:", np.percentile(train_ds["length"], 99))
-    # print("95th percentile:", np.percentile(train_ds["length"], 95))
 
     print(training_args.mlm_probability)
 
