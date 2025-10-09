@@ -68,7 +68,7 @@ torchrun \
     python_scripts/train_modernBERT.py \
     --run-name modernBERT34M_dynamic_batch_2GPU\
     --tokenizer-path ./char_tokenizer \
-    --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
+    --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train_representative \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
     --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
     --output-dir /gpfs/data/brandeslab/model_checkpts \

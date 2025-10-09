@@ -202,6 +202,7 @@ def main():
 
     # Load pre-tokenized datasets
     train_ds = load_from_disk(data_args.train_dataset_path)
+    train_ds = train_ds.select(range(20))  # for testing
     val_ds = load_from_disk(data_args.val_dataset_path)
 
     # print("Max train length:", max(train_ds["length"]))

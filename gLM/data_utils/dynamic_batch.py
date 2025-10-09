@@ -266,7 +266,8 @@ class LengthAdaptiveBatchSampler(Sampler):
 
         # Batch indices order 
         batch_order = list(range(len(batched_indices)))
-        print(f"[Rank {self.rank}] Initial batch order: {batch_order[:10]}... (total {len(batch_order)})")
+        print(f"[Rank {self.rank}]: {batch_order}, total_batches={len(batch_order)}")
+        # print(f"[Rank {self.rank}] Initial batch order: {batch_order[:10]}... (total {len(batch_order)})")
         
         if self.shuffle:
             random.seed(42)
@@ -277,6 +278,13 @@ class LengthAdaptiveBatchSampler(Sampler):
         # Yield rank's batch based on the shared order 
         for i in range(self.rank, len(batched_indices), self.world_size):
             batch_idx = batch_order[i]
+            # Debug: Compute average sequence length for this rank's batches
+            total_tokens = 0
+            total_samples = 0
+            total_tokens += sum(self.lengths[i] for i in batched_indices[batch_idx])
+            total_samples += len(batched_indices[batch_idx])
+            avg_len = total_tokens / total_samples if total_samples > 0 else 0
+            print(f"[Rank {self.rank}] Yielding batch {batch_idx} with avg seq length: {avg_len:.2f}")
             yield batched_indices[batch_idx]
 
 
