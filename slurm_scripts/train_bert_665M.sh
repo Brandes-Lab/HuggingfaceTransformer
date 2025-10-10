@@ -75,7 +75,7 @@ torchrun \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
     --max-steps 3_000_000 \
     --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 64 \
+    --gradient_accumulation_steps 16 \
     --per_device_eval_batch_size 4 \
     --learning_rate 3e-4 \
     --vep_eval_steps 5000 \
