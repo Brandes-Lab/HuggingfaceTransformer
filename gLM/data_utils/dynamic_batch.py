@@ -257,34 +257,32 @@ class LengthAdaptiveBatchSampler(Sampler):
             self.world_size = 1
 
     def __iter__(self):
-        # shard indices across ranks
-        indices = self.sorted_indices[self.rank :: self.world_size]
-        lengths = self.lengths
+        indices = self.sorted_indices
         
-        # Batch per rank - not shuffled
-        batched_indices = _get_length_adaptive_batches(indices, lengths, shuffle=False)
+        # Global batching
+        batched_indices = _get_length_adaptive_batches(
+            indices, self.lengths, shuffle=False
+        )
 
-        # Batch indices order 
+        # Shared shuffled batch order
         batch_order = list(range(len(batched_indices)))
-        print(f"[Rank {self.rank}]: {batch_order}, total_batches={len(batch_order)}")
-        # print(f"[Rank {self.rank}] Initial batch order: {batch_order[:10]}... (total {len(batch_order)})")
-        
-        if self.shuffle:
-            random.seed(42)
-            random.shuffle(batched_indices)
+        random.seed(42)
+        random.shuffle(batch_order)
 
         print(f"[Rank {self.rank}] Total batches: {len(batched_indices)}")
 
-        # Yield rank's batch based on the shared order 
-        for i in range(self.rank, len(batched_indices), self.world_size):
+        max_debug_batches = 5  # Number of batches to to print debug info for
+
+        # Yield batches for this rank
+        for i in range(self.rank, len(batch_order), self.world_size):
             batch_idx = batch_order[i]
-            # Debug: Compute average sequence length for this rank's batches
-            total_tokens = 0
-            total_samples = 0
-            total_tokens += sum(self.lengths[i] for i in batched_indices[batch_idx])
-            total_samples += len(batched_indices[batch_idx])
-            avg_len = total_tokens / total_samples if total_samples > 0 else 0
-            print(f"[Rank {self.rank}] Yielding batch {batch_idx} with avg seq length: {avg_len:.2f}")
+
+            if (i // self.world_size) < max_debug_batches:
+                total_tokens = sum(self.lengths[j] for j in batched_indices[batch_idx])
+                total_samples = len(batched_indices[batch_idx])
+                avg_len = total_tokens / total_samples if total_samples > 0 else 0
+                print(f"[Rank {self.rank}] Yielding batch {i//self.world_size + 1}/{math.ceil(len(batched_indices)/self.world_size)} with avg seq length: {avg_len:.2f}")
+
             yield batched_indices[batch_idx]
 
 
