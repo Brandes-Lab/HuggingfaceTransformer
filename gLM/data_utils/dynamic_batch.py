@@ -257,7 +257,7 @@ class LengthAdaptiveBatchSampler(Sampler):
             self.world_size = 1
 
     def __iter__(self):
-        indices = self.sorted_indices
+        indices = self.sorted_indices[self.rank :: self.world_size]
         
         # Global batching
         batched_indices = _get_length_adaptive_batches(
@@ -270,18 +270,26 @@ class LengthAdaptiveBatchSampler(Sampler):
         random.shuffle(batch_order)
 
         print(f"[Rank {self.rank}] Total batches: {len(batched_indices)}")
+        print(f"[Rank {self.rank}] Batched order: {batch_order}")
 
-        max_debug_batches = 5  # Number of batches to to print debug info for
+        max_debug_batches = 10  # Number of batches to to print debug info for
+        debug_batches = []
+        for i in range(max_debug_batches):
+            batch = batched_indices[batch_order[i]]
+            max_len = max(self.lengths[j] for j in batch)
+            debug_batches.append(max_len)
+        print(f"[Rank {self.rank}] Debug batches: {debug_batches}")
 
         # Yield batches for this rank
-        for i in range(self.rank, len(batch_order), self.world_size):
+        for batch_idx in batch_order:
             batch_idx = batch_order[i]
+            print(f"[Rank {self.rank}] Yielding batch {batch_idx}")
 
-            if (i // self.world_size) < max_debug_batches:
-                total_tokens = sum(self.lengths[j] for j in batched_indices[batch_idx])
-                total_samples = len(batched_indices[batch_idx])
-                avg_len = total_tokens / total_samples if total_samples > 0 else 0
-                print(f"[Rank {self.rank}] Yielding batch {i//self.world_size + 1}/{math.ceil(len(batched_indices)/self.world_size)} with avg seq length: {avg_len:.2f}")
+            # if (i // self.world_size) < max_debug_batches:
+            #     total_tokens = sum(self.lengths[j] for j in batched_indices[batch_idx])
+            #     total_samples = len(batched_indices[batch_idx])
+            #     avg_len = total_tokens / total_samples if total_samples > 0 else 0
+            #     print(f"[Rank {self.rank}] Yielding batch {i//self.world_size + 1}/{math.ceil(len(batched_indices)/self.world_size)} with avg seq length: {avg_len:.2f}")
 
             yield batched_indices[batch_idx]
 

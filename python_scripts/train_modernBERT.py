@@ -2,10 +2,7 @@
 from dataclasses import dataclass, field # type: ignore
 import os
 
-import numpy as np # type: ignore
 import torch    # type: ignore
-import pandas as pd
-import matplotlib.pyplot as plt
 from datasets import load_from_disk
 from transformers import (
     HfArgumentParser,

@@ -10,7 +10,7 @@ env:
 	conda env create -f environment.yml
 
 # Create uv environment
-env-uv:
+env-uv: install-uv
 	uv venv .venv --python 3.10
 	uv pip install -r requirements.txt
 
@@ -19,7 +19,7 @@ install-env:
 	conda env update -f environment.yml --prune
 
 # Install/update uv environment
-install-env-uv: install-uv
+install-env-uv: env-uv
 	uv pip install -r requirements.txt
 
 # Remove conda environment
@@ -39,5 +39,6 @@ lambda-git-config:
 	git config --global user.email "benjaminjslevy@gmail.com" && \
 	git config push.autoSetupRemote true
 
+# TODO: Copy data, move to separate directories within filesystem
 lambda-rclone-from-local:
 	rclone copy . lambda:/home/ubuntu/filesystem2/ -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc";
