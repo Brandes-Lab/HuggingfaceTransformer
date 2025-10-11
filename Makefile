@@ -38,3 +38,6 @@ lambda-git-config:
 	git config --global user.name "Benjamin Levy" && \
 	git config --global user.email "benjaminjslevy@gmail.com" && \
 	git config push.autoSetupRemote true
+
+lambda-rclone-from-local:
+	rclone copy . lambda:/home/ubuntu/filesystem2/ -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc";
