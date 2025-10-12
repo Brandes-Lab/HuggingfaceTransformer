@@ -1,8 +1,8 @@
 # type: ignore
-from dataclasses import dataclass, field # type: ignore
+from dataclasses import dataclass, field  # type: ignore
 import os
 
-import torch    # type: ignore
+import torch  # type: ignore
 from datasets import load_from_disk
 from transformers import (
     HfArgumentParser,
@@ -113,9 +113,9 @@ class CustomTrainingArguments(TrainingArguments):
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
     shuffle_batches: bool = field(
-        default=True, metadata={"help": "Whether to shuffle batches after bucketing by length"}
+        default=True,
+        metadata={"help": "Whether to shuffle batches after bucketing by length"},
     )
-
 
     ## DDP arguments
     local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)
@@ -223,13 +223,12 @@ def main():
         #     mlm_probability=training_args.mlm_probability,
         #     max_length=training_args.max_tokens_per_batch,
         # )
-        print(f"using CustomBatchSizeTrainer")
         trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
             train_dataset=train_ds,
             eval_dataset=val_ds,
-            tokenizer=tokenizer,
+            processing_class=tokenizer,
             data_collator=data_collator,
         )
     else:
@@ -238,10 +237,9 @@ def main():
             args=training_args,
             train_dataset=train_ds,
             eval_dataset=val_ds,
-            tokenizer=tokenizer,
+            processing_class=tokenizer,
             data_collator=data_collator,
         )
-
 
     # trainer.add_callback(
     #     ZeroShotVEPEvaluationCallback(

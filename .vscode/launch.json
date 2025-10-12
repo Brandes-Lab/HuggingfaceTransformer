@@ -2,7 +2,7 @@
     "configurations": [
         {
             "name": "modernBERT_long_ctxt_length",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/python_scripts/modernBERT_long_ctxt_length.py",
             "console": "integratedTerminal",
@@ -31,7 +31,7 @@
         },
         {
             "name": "train_modernBERT",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/python_scripts/train_modernBERT.py",
             "console": "integratedTerminal",
@@ -57,6 +57,42 @@
                 "32",
                 "--dynamic-batching",
                 "--group-by-length=false",
+            ]
+        },
+        {
+            "name": "train_lambda.sh (torchrun 8 GPUs)",
+            "type": "python",
+            "request": "launch",
+            "module": "torch.distributed.run",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "subProcess": true,
+            "env": {
+                "WANDB_PROJECT": "huggingface_bert_sweep",
+                "WORLD_SIZE": "8",
+                "TOKENIZERS_PARALLELISM": "false",
+                "MASTER_PORT": "29500"
+            },
+            // Pulled from train_lambda.sh
+            "args": [
+                "--nnodes=1",
+                "--nproc-per-node=8",
+                "${workspaceFolder}/python_scripts/train_modernBERT.py",
+                "--run-name",
+                "modernBERT-dynamic-batch-test-bucketed",
+                "--tokenizer-path",
+                "${workspaceFolder}/char_tokenizer",
+                "--train-dataset-path",
+                "/home/ubuntu/filesystem2/uniref90_tokenized_8192_small/train",
+                "--val-dataset-path",
+                "/home/ubuntu/filesystem2/uniref90_tokenized_8192_small/validation",
+                "--vep-input-csv",
+                "/home/ubuntu/filesystem2/uniref90_tokenized_8192_small/clinvar_AA_zero_shot_input.csv",
+                "--output-dir",
+                "${workspaceFolder}/checkpoints",
+                "--max-steps",
+                "20000",
+                "--dynamic-batching"
             ]
         },
     ]
