@@ -256,12 +256,12 @@ class LengthAdaptiveBatchSampler(Sampler):
             if current_target is None:
                 batch = []
                 current_target = target_bs
-                print_rank0(f"[BatchSampler] Starting new bucket: batch_size={current_target} (seq len {length})")
+                # print_rank0(f"[BatchSampler] Starting new bucket: batch_size={current_target} (seq len {length})")
 
 
             batch.append(idx)
             if len(batch) == current_target:
-                print_rank0("[BatchSampler] Yielding batch")
+                # print_rank0("[BatchSampler] Yielding batch")
                 yield batch
                 current_target = None
 

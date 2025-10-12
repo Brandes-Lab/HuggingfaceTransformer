@@ -1,9 +1,9 @@
 # type: ignore
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field # type: ignore
 import os
 
-import numpy as np
-import torch 
+import numpy as np # type: ignore
+import torch    # type: ignore
 import pandas as pd
 import matplotlib.pyplot as plt
 from datasets import load_from_disk
@@ -23,7 +23,7 @@ from gLM.callbacks import (
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
-from gLM.train_utils import CustomTrainer
+from gLM.train_utils import CustomBatchSizeTrainer
 
 
 if torch.cuda.is_available():
@@ -72,6 +72,7 @@ class DataArguments:
     )
 
 
+
 @dataclass
 class CustomTrainingArguments(TrainingArguments):
     run_name: str = field(
@@ -86,16 +87,16 @@ class CustomTrainingArguments(TrainingArguments):
         default=3_000_000, metadata={"help": "Maximum number of training steps"}
     )
     per_device_train_batch_size: int = field(
-        default=8, metadata={"help": "Training batch size per device"}
+        default=1, metadata={"help": "Training batch size per device"}
     )
     gradient_accumulation_steps: int = field(
         default=32, metadata={"help": "Number of gradient accumulation steps"}
     )
     per_device_eval_batch_size: int = field(
-        default=4, metadata={"help": "Evaluation batch size per device"}
+        default=8, metadata={"help": "Evaluation batch size per device"}
     )
     learning_rate: float = field(
-        default=3e-4, metadata={"help": "Learning rate for training"}
+        default=1e-3, metadata={"help": "Learning rate for training"}
     )
     logging_steps: int = field(
         default=32, metadata={"help": "Number of steps between logging"}
@@ -116,11 +117,15 @@ class CustomTrainingArguments(TrainingArguments):
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
     dynamic_batching: bool = field(
-        default=False, metadata={"help": "Whether to use dynamic batching"}
+        default=True, metadata={"help": "Whether to use dynamic batching"}
     )
     max_tokens_per_batch: int = field(
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
+    shuffle_batches: bool = field(
+        default=True, metadata={"help": "Whether to shuffle batches after bucketing by length"}
+    )
+
 
     ## DDP arguments
     local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)
@@ -135,11 +140,13 @@ class CustomTrainingArguments(TrainingArguments):
     # eval_steps: int = field(default=50000)
     logging_strategy: str = field(default="steps")
     save_strategy: str = field(default="steps")
-    save_steps: int= field(default=10000)
+    save_steps: int = field(default=1_000_000)
     report_to: str = field(default="wandb")
     remove_unused_columns: bool = field(default=False)
-    group_by_length: bool = field(default=True)
+    group_by_length: bool = field(default=False)
     length_column_name: str = field(default="length")
+
+    base_batch_size: int = field(default=8, metadata={"help": "Base batch size for dynamic batching"})
 
 
 @dataclass
@@ -203,6 +210,7 @@ def main():
 
     # Load pre-tokenized datasets
     train_ds = load_from_disk(data_args.train_dataset_path)
+    # train_ds = train_ds.select(range(500))  # for testing
     val_ds = load_from_disk(data_args.val_dataset_path)
     val_ds = val_ds.shuffle(seed=42)
 
@@ -210,6 +218,7 @@ def main():
     val_subset = val_ds.select(range(500_000))
 
     # print("Max train length:", max(train_ds["length"]))
+    # print(f"Number of seqs of length 8192: {(np.array(train_ds['length'])==8192).sum()}")
     # print("99th percentile:", np.percentile(train_ds["length"], 99))
     # print("95th percentile:", np.percentile(train_ds["length"], 95))
 
@@ -218,14 +227,20 @@ def main():
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=True,
+        mlm_probability=training_args.mlm_probability,
+    )
     if training_args.dynamic_batching:
-        data_collator = TruncatingDataCollatorForMLM(
-            tokenizer=tokenizer,
-            mlm=True,
-            mlm_probability=training_args.mlm_probability,
-            max_length=training_args.max_tokens_per_batch,
-        )
-        trainer = CustomTrainer(
+        # data_collator = TruncatingDataCollatorForMLM(
+        #     tokenizer=tokenizer,
+        #     mlm=True,
+        #     mlm_probability=training_args.mlm_probability,
+        #     max_length=training_args.max_tokens_per_batch,
+        # )
+        print(f"using CustomBatchSizeTrainer")
+        trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
             train_dataset=train_ds,
@@ -234,11 +249,6 @@ def main():
             data_collator=data_collator,
         )
     else:
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=True,
-            mlm_probability=training_args.mlm_probability,
-        )
         trainer = Trainer(
             model=model,
             args=training_args,

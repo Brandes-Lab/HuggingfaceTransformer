@@ -30,4 +30,5 @@ class ProteinBertModel:
             cls_token_id=self.tokenizer.cls_token_id,
             sep_token_id=self.tokenizer.sep_token_id,
         )
-        return ModernBertForMaskedLM(config)
+        model = ModernBertForMaskedLM(config)
+        return model

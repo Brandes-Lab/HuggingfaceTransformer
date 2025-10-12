@@ -155,12 +155,13 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         if is_initialized():
             barrier()
 
-    def on_step_begin(self, args, state, control, model=None, **kwargs):
-        if state.global_step == 0:
-            self.run_vep_eval(model, step_id=state.global_step)
-        return control
+    # def on_step_begin(self, args, state, control, model=None, **kwargs):
+    #     if state.global_step == 0:
+    #         self.run_vep_eval(model, step_id=state.global_step)
+    #     return control
 
     def on_step_end(self, args, state, control, model=None, **kwargs):
         if state.global_step % self.eval_every_n_steps == 0 and state.global_step > 0:
             self.run_vep_eval(model, step_id=state.global_step)
         return control
+
