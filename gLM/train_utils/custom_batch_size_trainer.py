@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 
 class CustomBatchSizeTrainer(Trainer):
     def get_train_dataloader(self):
-        sampler = LengthAdaptiveBatchSampler(self.train_dataset, length_field="length", shuffle=self.args.shuffle_batches)
+        sampler = LengthAdaptiveBatchSampler(self.train_dataset, length_field="length", base_batch_size=self.args.base_batch_size)
         return DataLoader(
             self.train_dataset,
             batch_sampler=sampler,

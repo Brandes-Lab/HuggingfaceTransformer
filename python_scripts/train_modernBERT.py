@@ -72,6 +72,7 @@ class DataArguments:
     )
 
 
+
 @dataclass
 class CustomTrainingArguments(TrainingArguments):
     run_name: str = field(
@@ -141,6 +142,8 @@ class CustomTrainingArguments(TrainingArguments):
     group_by_length: bool = field(default=False)
     length_column_name: str = field(default="length")
 
+    base_batch_size: int = field(default=8, metadata={"help": "Base batch size for dynamic batching"})
+
 
 @dataclass
 class WandbArguments:
@@ -206,6 +209,7 @@ def main():
     val_ds = load_from_disk(data_args.val_dataset_path)
 
     # print("Max train length:", max(train_ds["length"]))
+    # print(f"Number of seqs of length 8192: {(np.array(train_ds['length'])==8192).sum()}")
     # print("99th percentile:", np.percentile(train_ds["length"], 99))
     # print("95th percentile:", np.percentile(train_ds["length"], 95))
 

@@ -60,50 +60,27 @@ def _get_length_grouped_indices(
 
 
 def _get_length_adaptive_batches(
-    indices: list[int], lengths: list[int], shuffle: bool = False
+    indices: list[int], lengths: list[int], base_batch_size: int = 8
 ) -> list[list[int]]:
 
     current_target = None
 
-    # def target_bs_for_length(length):
-    #     if length > 8192:
-    #         return 1
-    #     elif length > 1610:
-    #         return 8
-    #     elif length > 1024:
-    #         return 16
-    #     elif length > 512:
-    #         return 64
-    #     else:
-    #         return 128
-
     def target_bs_for_length(length):
-        # base_batch_size = 16
-        # if length > 8192:
-        #     return 1
-        # elif length > 4096:
-        #     return base_batch_size
-        # elif length > 2048:
-        #     return base_batch_size * 2
-        # elif length > 1024:
-        #     return base_batch_size * 4
-        # elif length > 512:
-        #     return base_batch_size * 8
-        # else:
-        #     return base_batch_size * 16
-
         if length > 8192:
             return 1
         elif length > 4096:
-            return 8
+            return base_batch_size
         elif length > 2048:
-            return 16
+            return base_batch_size * 2
         elif length > 1024:
-            return 64
+            return base_batch_size * 4
         elif length > 512:
-            return 128
+            return base_batch_size * 8
+        elif length > 256:
+            return base_batch_size * 16
         else:
-            return 256
+            return base_batch_size * 32
+
 
     batched_indices = []
     current_batch = []
@@ -113,31 +90,102 @@ def _get_length_adaptive_batches(
 
         if current_target is None:
             current_target = target_bs
-            # print_rank0(
-            #     f"[BatchSampler] Starting new bucket: batch_size={current_target} (seq len {length})"
-            # )
-            # print(f"[Rank DEBUG] Starting new batch: target_bs={current_target}, first_seq_len={length}")
 
         current_batch.append(idx)
         if len(current_batch) == current_target:
-            # print_rank0("[BatchSampler] Yielding batch")
-            # batch_lengths = [lengths[i] for i in current_batch]
-            # print(f"[Rank DEBUG] Completed batch of size {len(current_batch)} with lengths: {batch_lengths}")
             batched_indices.append(current_batch)
             current_target = None
             current_batch = []
 
     # Flush leftovers
     if current_batch and current_target is not None and len(current_batch) < current_target:
-        # batch_lengths = [lengths[i] for i in current_batch]
-        # print(f"[Rank DEBUG] Flushing incomplete batch of size {len(current_batch)} with lengths: {batch_lengths}")
         batched_indices.append(current_batch)
 
-    if shuffle:
-        print(f"[BatchSampler] Shuffling batches")
-        random.shuffle(batched_indices)
-
     return batched_indices
+
+
+
+# def _get_length_adaptive_batches(
+#     indices: list[int], lengths: list[int], shuffle: bool = False
+# ) -> list[list[int]]:
+
+#     current_target = None
+
+#     # def target_bs_for_length(length):
+#     #     if length > 8192:
+#     #         return 1
+#     #     elif length > 1610:
+#     #         return 8
+#     #     elif length > 1024:
+#     #         return 16
+#     #     elif length > 512:
+#     #         return 64
+#     #     else:
+#     #         return 128
+
+#     def target_bs_for_length(length):
+#         base_batch_size = 16
+#         if length > 8192:
+#             return 1
+#         elif length > 4096:
+#             return base_batch_size
+#         elif length > 2048:
+#             return base_batch_size * 2
+#         elif length > 1024:
+#             return base_batch_size * 4
+#         elif length > 512:
+#             return base_batch_size * 8
+#         else:
+#             return base_batch_size * 16
+
+#         if length > 8192:
+#             return 1
+#         elif length > 4096:
+#             return 8
+#         elif length > 2048:
+#             return 16
+#         elif length > 1024:
+#             return 32
+#         elif length > 512:
+#             return 64
+#         elif length > 256:
+#             return 128
+#         else:
+#             return 256
+
+#     batched_indices = []
+#     current_batch = []
+#     for idx in indices:
+#         length = lengths[idx]
+#         target_bs = target_bs_for_length(length)
+
+#         if current_target is None:
+#             current_target = target_bs
+#             # print_rank0(
+#             #     f"[BatchSampler] Starting new bucket: batch_size={current_target} (seq len {length})"
+#             # )
+#             # print(f"[Rank DEBUG] Starting new batch: target_bs={current_target}, first_seq_len={length}")
+
+#         current_batch.append(idx)
+#         if len(current_batch) == current_target:
+#             # print_rank0("[BatchSampler] Yielding batch")
+#             # batch_lengths = [lengths[i] for i in current_batch]
+#             # print(f"[Rank DEBUG] Completed batch of size {len(current_batch)} with lengths: {batch_lengths}")
+#             batched_indices.append(current_batch)
+#             current_target = None
+#             current_batch = []
+
+#     # Flush leftovers
+#     if current_batch and current_target is not None and len(current_batch) < current_target:
+#         # batch_lengths = [lengths[i] for i in current_batch]
+#         # print(f"[Rank DEBUG] Flushing incomplete batch of size {len(current_batch)} with lengths: {batch_lengths}")
+#         batched_indices.append(current_batch)
+
+#     if shuffle:
+#         print(f"[BatchSampler] Shuffling batches")
+#         random.shuffle(batched_indices)
+
+#     return batched_indices
 
 
 
@@ -175,106 +223,13 @@ class DynamicBatchSampler(Sampler):
             yield batch_indices
 
 
-# class LengthAdaptiveBatchSampler(Sampler):
-#     def __init__(self, dataset, length_field="length", shuffle: bool = True):
-#         self.dataset = dataset
-#         self.lengths = dataset[length_field]
-#         self.sorted_indices = sorted(
-#             range(len(self.lengths)), key=lambda i: -self.lengths[i]
-#         )
-#         self.shuffle = shuffle
-
-#         # DDP setup
-#         if is_initialized():
-#             self.rank = get_rank()
-#             self.world_size = get_world_size()
-#         else:
-#             self.rank = 0
-#             self.world_size = 1
-
-#     def __iter__(self):
-#         # shard indices across ranks
-#         indices = self.sorted_indices[self.rank :: self.world_size]
-#         lengths = self.lengths
-
-#         print(f"[Rank {self.rank}] Got {len(indices)} samples before batching.")
-        
-#         batched_indices = _get_length_adaptive_batches(indices, lengths, shuffle=self.shuffle)
-        
-#         print(f"[Rank {self.rank}] Prepared {len(batched_indices)} batches.")
-#         for batch in batched_indices:
-#             yield batch
-
-#     def __len__(self):
-#         # Each rank only sees its share
-#         return (len(self.sorted_indices) + self.world_size - 1) // self.world_size
-
-#     def __len__(self):
-#         # Each rank only sees its share
-#         indices = self.sorted_indices[self.rank :: self.world_size]
-#         batched = _get_length_adaptive_batches(indices, self.lengths, shuffle=False)
-#         # Return the number of batches, not the number of samples
-#         return len(batched)
-
-
-        
-# class LengthAdaptiveBatchSampler(Sampler):
-#     def __init__(self, dataset, length_field="length", shuffle: bool = True):
-#         self.dataset = dataset
-#         self.lengths = dataset[length_field]
-#         self.sorted_indices = sorted(
-#             range(len(self.lengths)), key=lambda i: -self.lengths[i]
-#         )
-#         self.shuffle = shuffle
-
-#         # DDP setup
-#         if is_initialized():
-#             self.rank = get_rank()
-#             self.world_size = get_world_size()
-#         else:
-#             self.rank = 0
-#             self.world_size = 1
-
-#     def __iter__(self):
-#         # Batching-first method: batch globally, then shard across ranks
-#         batched_indices = _get_length_adaptive_batches(
-#             self.sorted_indices, self.lengths, shuffle=self.shuffle
-#         )
-
-#         # Shard batches round-robin across ranks
-#         batched_indices = batched_indices[self.rank :: self.world_size]
-
-#         # Debug: Compute average sequence length for this rank's batches
-#         total_tokens = 0
-#         total_samples = 0
-#         for batch in batched_indices:
-#             total_tokens += sum(self.lengths[i] for i in batch)
-#             total_samples += len(batch)
-#         avg_len = total_tokens / total_samples if total_samples > 0 else 0
-#         print(f"[Rank {self.rank}] Avg sequence length AFTER batching/sharding: {avg_len:.2f}")
-
-#         print(f"[Rank {self.rank}] Prepared {len(batched_indices)} batches.")
-
-#         for batch in batched_indices:
-#             yield batch
-
-#     def __len__(self):
-#         # Return number of batches per rank
-#         batched = _get_length_adaptive_batches(
-#             self.sorted_indices, self.lengths, shuffle=False
-#         )
-#         return math.ceil(len(batched) / self.world_size)
-
-
-
 class LengthAdaptiveBatchSampler(Sampler):
-    def __init__(self, dataset, length_field="length", shuffle: bool = True):
+    def __init__(self, dataset, length_field="length", base_batch_size=8):
         self.dataset = dataset
         self.lengths = dataset[length_field]
         self.sorted_indices = sorted(
             range(len(self.lengths)), key=lambda i: -self.lengths[i]
         )
-        self.shuffle = shuffle
         self.length = None
         # DDP setup
         if is_initialized():
@@ -287,9 +242,9 @@ class LengthAdaptiveBatchSampler(Sampler):
     def __iter__(self):
         indices = self.sorted_indices[self.rank :: self.world_size]
         
-        # Global batching
+        # Rank Batching
         batched_indices = _get_length_adaptive_batches(
-            indices, self.lengths, shuffle=False
+            indices, self.lengths, base_batch_size=8
         )
         if self.length is None: 
             self.length = len(batched_indices)
@@ -304,7 +259,6 @@ class LengthAdaptiveBatchSampler(Sampler):
         max_debug_batches = 10  # Number of batches to to print debug info for
 
         # Yield batches for this rank
-        # for i in range(self.rank, len(batch_order), self.world_size):
         for i, batch_idx in enumerate(batch_order):
             batch_idxs = batched_indices[batch_idx]
 
@@ -324,7 +278,7 @@ class LengthAdaptiveBatchSampler(Sampler):
         # Return number of batches per rank
         if self.length is None:
             batched = _get_length_adaptive_batches(
-                self.sorted_indices, self.lengths, shuffle=False
+                self.sorted_indices, self.lengths, base_batch_size=8
             )
             self.length = len(batched)
         
