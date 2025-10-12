@@ -1,11 +1,8 @@
 # type: ignore
-from dataclasses import dataclass, field # type: ignore
+from dataclasses import dataclass, field  # type: ignore
 import os
 
-import numpy as np # type: ignore
-import torch    # type: ignore
-import pandas as pd
-import matplotlib.pyplot as plt
+import torch  # type: ignore
 from datasets import load_from_disk
 from transformers import (
     HfArgumentParser,
@@ -19,6 +16,8 @@ from gLM.callbacks import (
     ElapsedTimeLoggerCallback,
     ZeroShotVEPEvaluationCallback,
     LossPrintCallback,
+    PyTorchProfilerCallback,
+    SimpleGPUMemoryCallback,
 )
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
@@ -116,9 +115,37 @@ class CustomTrainingArguments(TrainingArguments):
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
     shuffle_batches: bool = field(
-        default=True, metadata={"help": "Whether to shuffle batches after bucketing by length"}
+        default=True,
+        metadata={"help": "Whether to shuffle batches after bucketing by length"},
     )
 
+    ## Profiling arguments
+    enable_profiling: bool = field(
+        default=False, metadata={"help": "Enable PyTorch profiler"}
+    )
+    enable_memory_logging: bool = field(
+        default=False, metadata={"help": "Enable simple GPU memory logging"}
+    )
+    profiler_output_dir: str = field(
+        default="./profiler_traces",
+        metadata={"help": "Directory to save profiler traces"},
+    )
+    profiler_wait_steps: int = field(
+        default=5,
+        metadata={"help": "Number of steps to wait before profiling starts"},
+    )
+    profiler_warmup_steps: int = field(
+        default=2, metadata={"help": "Number of warmup steps before active profiling"}
+    )
+    profiler_active_steps: int = field(
+        default=3, metadata={"help": "Number of steps to actively profile"}
+    )
+    profiler_repeat: int = field(
+        default=1, metadata={"help": "Number of times to repeat the profiling cycle"}
+    )
+    memory_log_steps: int = field(
+        default=10, metadata={"help": "Log GPU memory every N steps"}
+    )
 
     ## DDP arguments
     local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)
@@ -245,7 +272,6 @@ def main():
             data_collator=data_collator,
         )
 
-
     # trainer.add_callback(
     #     ZeroShotVEPEvaluationCallback(
     #         tokenizer=tokenizer,
@@ -256,6 +282,39 @@ def main():
     # )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
+
+    # Add profiling callbacks if enabled
+    if training_args.enable_profiling:
+        print_rank0("=" * 80)
+        print_rank0("PyTorch Profiler ENABLED")
+        print_rank0(f"Output directory: {training_args.profiler_output_dir}")
+        print_rank0(
+            f"Schedule: wait={training_args.profiler_wait_steps}, "
+            f"warmup={training_args.profiler_warmup_steps}, "
+            f"active={training_args.profiler_active_steps}, "
+            f"repeat={training_args.profiler_repeat}"
+        )
+        print_rank0("=" * 80)
+        trainer.add_callback(
+            PyTorchProfilerCallback(
+                output_dir=training_args.profiler_output_dir,
+                wait_steps=training_args.profiler_wait_steps,
+                warmup_steps=training_args.profiler_warmup_steps,
+                active_steps=training_args.profiler_active_steps,
+                repeat_times=training_args.profiler_repeat,
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                with_flops=True,
+            )
+        )
+
+    if training_args.enable_memory_logging:
+        print_rank0("GPU Memory Logging ENABLED")
+        print_rank0(f"Logging every {training_args.memory_log_steps} steps")
+        trainer.add_callback(
+            SimpleGPUMemoryCallback(log_every_n_steps=training_args.memory_log_steps)
+        )
 
     trainer.train()
 
