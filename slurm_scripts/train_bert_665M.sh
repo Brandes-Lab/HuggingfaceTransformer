@@ -77,7 +77,7 @@ torchrun \
     --per_device_train_batch_size 4 \
     --gradient_accumulation_steps 16 \
     --per_device_eval_batch_size 4 \
-    --learning_rate 3e-4 \
+    --learning_rate 1e-4 \
     --vep_eval_steps 5000 \
     --dataloader_num_workers 4 \
     --dataloader_persistent_workers True \
