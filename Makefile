@@ -41,3 +41,6 @@ lambda-git-config:
 
 lambda-rclone-from-local:
 	rclone copy . lambda:/home/ubuntu/filesystem2/ -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc";
+
+install-flash-attn:
+	uv pip installhttps://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.11/flash_attn-2.8.3+cu128torch2.7-cp310-cp310-linux_x86_64.whl
