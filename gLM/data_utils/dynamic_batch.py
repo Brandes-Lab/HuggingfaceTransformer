@@ -65,17 +65,45 @@ def _get_length_adaptive_batches(
 
     current_target = None
 
+    # def target_bs_for_length(length):
+    #     if length > 8192:
+    #         return 1
+    #     elif length > 1610:
+    #         return 8
+    #     elif length > 1024:
+    #         return 16
+    #     elif length > 512:
+    #         return 64
+    #     else:
+    #         return 128
+
     def target_bs_for_length(length):
+        # base_batch_size = 16
+        # if length > 8192:
+        #     return 1
+        # elif length > 4096:
+        #     return base_batch_size
+        # elif length > 2048:
+        #     return base_batch_size * 2
+        # elif length > 1024:
+        #     return base_batch_size * 4
+        # elif length > 512:
+        #     return base_batch_size * 8
+        # else:
+        #     return base_batch_size * 16
+
         if length > 8192:
             return 1
-        elif length > 1610:
+        elif length > 4096:
             return 8
-        elif length > 1024:
+        elif length > 2048:
             return 16
-        elif length > 512:
+        elif length > 1024:
             return 64
-        else:
+        elif length > 512:
             return 128
+        else:
+            return 256
 
     batched_indices = []
     current_batch = []
@@ -247,7 +275,7 @@ class LengthAdaptiveBatchSampler(Sampler):
             range(len(self.lengths)), key=lambda i: -self.lengths[i]
         )
         self.shuffle = shuffle
-
+        self.length = None
         # DDP setup
         if is_initialized():
             self.rank = get_rank()
@@ -263,27 +291,30 @@ class LengthAdaptiveBatchSampler(Sampler):
         batched_indices = _get_length_adaptive_batches(
             indices, self.lengths, shuffle=False
         )
+        if self.length is None: 
+            self.length = len(batched_indices)
 
         # Shared shuffled batch order
         batch_order = list(range(len(batched_indices)))
         random.seed(42)
-        random.shuffle(batch_order)
+        # random.shuffle(batch_order)
 
         print(f"[Rank {self.rank}] Total batches: {len(batched_indices)}")
 
-        max_debug_batches = 5  # Number of batches to to print debug info for
+        max_debug_batches = 10  # Number of batches to to print debug info for
 
         # Yield batches for this rank
         # for i in range(self.rank, len(batch_order), self.world_size):
         for i, batch_idx in enumerate(batch_order):
+            batch_idxs = batched_indices[batch_idx]
 
             if i  < max_debug_batches:
-                total_tokens = sum(self.lengths[j] for j in batched_indices[batch_idx])
-                total_samples = len(batched_indices[batch_idx])
+                total_tokens = sum(self.lengths[j] for j in batch_idxs)
+                total_samples = len(batch_idxs)
                 avg_len = total_tokens / total_samples if total_samples > 0 else 0
-                max_len = max(self.lengths[j] for j in batched_indices[batch_idx])
-                min_len = min(self.lengths[j] for j in batched_indices[batch_idx])
-                print(f"[Rank {self.rank}] Yielding batch {i//self.world_size + 1}/{math.ceil(len(batched_indices)/self.world_size)} with {total_samples} samples, avg seq length: {avg_len:.2f}, min: {min_len}, max: {max_len}")
+                max_len = max(self.lengths[j] for j in batch_idxs)
+                min_len = min(self.lengths[j] for j in batch_idxs)
+                print(f"[Rank {self.rank}] Yielding batch {i}/{len(batched_indices)} with {total_samples} samples, avg seq length: {avg_len:.2f}, min: {min_len}, max: {max_len}")
                 # print(f"[Rank {self.rank}] Yielding batch {i//self.world_size + 1}/{math.ceil(len(batched_indices)/self.world_size)} with avg seq length: {avg_len:.2f}")
 
             yield batched_indices[batch_idx]
@@ -291,7 +322,10 @@ class LengthAdaptiveBatchSampler(Sampler):
 
     def __len__(self):
         # Return number of batches per rank
-        batched = _get_length_adaptive_batches(
-            self.sorted_indices, self.lengths, shuffle=False
-        )
-        return math.ceil(len(batched) / self.world_size)
+        if self.length is None:
+            batched = _get_length_adaptive_batches(
+                self.sorted_indices, self.lengths, shuffle=False
+            )
+            self.length = len(batched)
+        
+        return self.length

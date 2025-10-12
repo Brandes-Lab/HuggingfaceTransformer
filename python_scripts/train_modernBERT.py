@@ -135,7 +135,7 @@ class CustomTrainingArguments(TrainingArguments):
     # eval_steps: int = field(default=50000)
     logging_strategy: str = field(default="steps")
     save_strategy: str = field(default="steps")
-    save_steps: int = field(default=10_000)
+    save_steps: int = field(default=1_000_000)
     report_to: str = field(default="wandb")
     remove_unused_columns: bool = field(default=False)
     group_by_length: bool = field(default=False)
@@ -202,7 +202,7 @@ def main():
 
     # Load pre-tokenized datasets
     train_ds = load_from_disk(data_args.train_dataset_path)
-    train_ds = train_ds.select(range(500))  # for testing
+    # train_ds = train_ds.select(range(500))  # for testing
     val_ds = load_from_disk(data_args.val_dataset_path)
 
     # print("Max train length:", max(train_ds["length"]))
