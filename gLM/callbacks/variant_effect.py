@@ -17,7 +17,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         trainer,
         max_len=8192,
         eval_every_n_steps=10000,
-        batch_size=6,
+        batch_size=2,
     ):
         self.tokenizer = tokenizer
         self.input_csv = input_csv

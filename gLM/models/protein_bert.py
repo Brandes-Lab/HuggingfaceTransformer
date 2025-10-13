@@ -13,10 +13,10 @@ class ProteinBertModel:
         config = ModernBertConfig(
             vocab_size=self.vocab_size,
             max_position_embeddings=8192,
-            num_hidden_layers=20,
+            num_hidden_layers=24,
             num_attention_heads=20,
-            hidden_size=1440,
-            intermediate_size=5760,
+            hidden_size=1600,
+            intermediate_size=6656,
             type_vocab_size=1,
             hidden_activation="gelu",
             global_attn_every_n_layers=3,

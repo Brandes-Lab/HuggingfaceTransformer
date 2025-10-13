@@ -24,7 +24,7 @@ from gLM.callbacks import (
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
-from gLM.train_utils import CustomTrainer
+from gLM.train_utils import CustomBatchSizeTrainer
 
 
 if torch.cuda.is_available():
@@ -147,6 +147,7 @@ class CustomTrainingArguments(TrainingArguments):
     group_by_length: bool = field(default=True)
     length_column_name: str = field(default="length")
 
+    base_batch_size: int = field(default=8, metadata={"help": "Base batch size for dynamic batching"})
 
 @dataclass
 class WandbArguments:
@@ -215,25 +216,31 @@ def main():
     # Load pre-tokenized datasets
     train_ds = load_from_disk(data_args.train_dataset_path)
     val_ds = load_from_disk(data_args.val_dataset_path)
-    val_ds = val_ds.shuffle(seed=42)
+    # val_ds = val_ds.shuffle(seed=42)
 
-    # Select first 500k after shuffling
-    val_subset = val_ds.select(range(500_000))
+    # # Select first 500k after shuffling
+    # val_subset = val_ds.select(range(500_000))
 
 
     print(training_args.mlm_probability)
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
+    data_collator = DataCollatorForLanguageModeling(
+        tokenizer=tokenizer,
+        mlm=True,
+        mlm_probability=training_args.mlm_probability,
+    )
 
     if training_args.dynamic_batching:
-        data_collator = TruncatingDataCollatorForMLM(
-            tokenizer=tokenizer,
-            mlm=True,
-            mlm_probability=training_args.mlm_probability,
-            max_length=training_args.max_tokens_per_batch,
-        )
-        trainer = CustomTrainer(
+        # data_collator = TruncatingDataCollatorForMLM(
+        #     tokenizer=tokenizer,
+        #     mlm=True,
+        #     mlm_probability=training_args.mlm_probability,
+        #     max_length=training_args.max_tokens_per_batch,
+        # )
+        print(f"using CustomBatchSizeTrainer")
+        trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
             train_dataset=train_ds,
@@ -242,11 +249,6 @@ def main():
             data_collator=data_collator,
         )
     else:
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=True,
-            mlm_probability=training_args.mlm_probability,
-        )
         trainer = Trainer(
             model=model,
             args=training_args,

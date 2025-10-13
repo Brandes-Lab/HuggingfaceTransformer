@@ -65,21 +65,26 @@ def _get_length_adaptive_batches(
 
     current_target = None
 
+    # def target_bs_for_length(length):
+    #     if length > 8192:
+    #         return 1
+    #     elif length > 2048:
+    #         return base_batch_size
+    #     elif length > 1024:
+    #         return base_batch_size * 2
+    #     elif length > 512:
+    #         return base_batch_size * 4
+    #     else:
+    #         return base_batch_size * 8
+
+    # for the modernBERT1B model
     def target_bs_for_length(length):
-        if length > 8192:
+        if length > 4096:
             return 1
-        elif length > 4096:
-            return base_batch_size
-        elif length > 2048:
-            return base_batch_size * 2
-        elif length > 1024:
-            return base_batch_size * 4
         elif length > 512:
-            return base_batch_size * 8
-        elif length > 256:
-            return base_batch_size * 16
+            return base_batch_size * 2
         else:
-            return base_batch_size * 32
+            return base_batch_size * 4
 
 
     batched_indices = []
@@ -252,7 +257,7 @@ class LengthAdaptiveBatchSampler(Sampler):
         # Shared shuffled batch order
         batch_order = list(range(len(batched_indices)))
         random.seed(42)
-        # random.shuffle(batch_order)
+        random.shuffle(batch_order)
 
         print(f"[Rank {self.rank}] Total batches: {len(batched_indices)}")
 

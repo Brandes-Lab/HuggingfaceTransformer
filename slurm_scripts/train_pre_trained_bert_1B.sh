@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_pre_trained_modernBERT_1B
+#SBATCH --job-name=train_pre_trained_modernBERT_1B_2
 #SBATCH --partition=reservation
 #SBATCH --reservation=brandeslab_reservation
 #SBATCH --gres=gpu:a100:4
@@ -67,7 +67,7 @@ torchrun \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
     python_scripts/train_pre_trained_modernBERT.py \
-    --run-name pre_trained_modernBERT_1B \
+    --run-name pre_trained_modernBERT_1B_2 \
     --tokenizer-path ./char_tokenizer \
     --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
@@ -75,16 +75,17 @@ torchrun \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
     --max-steps 3_000_000 \
     --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 64 \
+    --gradient_accumulation_steps 8 \
+    --base_batch_size 2 \
     --per_device_eval_batch_size 4 \
     --learning_rate 1e-4 \
-    --logging_steps 64 \
     --vep_eval_steps 3000 \
     --dataloader_num_workers 6 \
     --dataloader_persistent_workers True \
     --dataloader_prefetch_factor 2 \
-    --ckpt_path /gpfs/data/brandeslab/model_checkpts/modernBERT_1B/checkpoint-3000 \
+    --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_1B/checkpoint-45000 \
     --eval_strategy "no" \
-    --save_steps 1500
+    --save_steps 1500 \
+    --dynamic-batching
 
 

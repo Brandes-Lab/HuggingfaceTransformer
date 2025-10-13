@@ -77,13 +77,15 @@ torchrun \
     --per_device_train_batch_size 8 \
     --gradient_accumulation_steps 32 \
     --per_device_eval_batch_size 4 \
+    --base_batch_size 8 \
     --learning_rate 1e-3 \
     --vep_eval_steps 25_000 \
     --dataloader_num_workers 6 \
     --dataloader_persistent_workers True \
     --dataloader_prefetch_factor 2 \
     --eval_strategy "no" \
-    --save_steps 25_000 \ 
+    --save_steps 25_000 \
+    --dynamic-batching
     
 
 
