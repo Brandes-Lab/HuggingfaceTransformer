@@ -30,8 +30,8 @@ class ProteinBertModel:
             cls_token_id=self.tokenizer.cls_token_id,
             sep_token_id=self.tokenizer.sep_token_id,
         )
-        # config._attn_implementation = "flash_attention_2"
-        # print("Using flash attention 2")
+        config._attn_implementation = "flash_attention_2"
+        print("Using flash attention 2")
         model = ModernBertForMaskedLM(config)
         # model = ModernBertForMaskedLM.from_pretrained(
         #     "./checkpoints/modernBERT-profiling-test/checkpoint-10"

@@ -27,9 +27,9 @@ torchrun \
     python_scripts/train_modernBERT.py \
     --run-name modernBERT-flash-attn \
     --tokenizer-path ./char_tokenizer \
-    --train-dataset-path /home/ubuntu/filesystem2/uniref90_tokenized_8192_small/train \
-    --val-dataset-path /home/ubuntu/filesystem2/uniref90_tokenized_8192_small/validation \
-    --vep-input-csv /home/ubuntu/filesystem2/uniref90_tokenized_8192_small/clinvar_AA_zero_shot_input.csv \
+    --train-dataset-path ../data/uniref90_tokenized_8192_small/train \
+    --val-dataset-path ../data/uniref90_tokenized_8192_small/validation \
+    --vep-input-csv ../data/uniref90_tokenized_8192_small/clinvar_AA_zero_shot_input.csv \
     --output-dir ./checkpoints \
     --max-steps 20000 \
     --dynamic-batching

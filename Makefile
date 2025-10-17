@@ -13,7 +13,7 @@ env:
 env-uv: install-uv
 	uv venv .venv --python 3.10 && \
 	source .venv/bin/activate && \
-	uv pip install -e .[training]
+	uv pip install -e .[training] setuptools
 
 # Install/update conda environment
 install-env:
@@ -45,4 +45,4 @@ lambda-rclone-from-local:
 	rclone copy ../../data lambda:/home/ubuntu/filesystem3/data -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude "*.pt.trace.json";
 
 install-flash-attn:
-	uv pip installhttps://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.11/flash_attn-2.8.3+cu128torch2.7-cp310-cp310-linux_x86_64.whl
+	uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.17/flash_attn-2.8.3+cu128torch2.9-cp310-cp310-linux_x86_64.whl
