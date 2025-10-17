@@ -10,16 +10,17 @@ env:
 	conda env create -f environment.yml
 
 # Create uv environment
-env-uv:
-	uv venv .venv --python 3.10
-	uv pip install -r requirements.txt
+env-uv: install-uv
+	uv venv .venv --python 3.10 && \
+	source .venv/bin/activate && \
+	uv pip install -e .[training]
 
 # Install/update conda environment
 install-env:
 	conda env update -f environment.yml --prune
 
 # Install/update uv environment
-install-env-uv: install-uv
+install-env-uv:
 	uv pip install -r requirements.txt
 
 # Remove conda environment
@@ -40,7 +41,8 @@ lambda-git-config:
 	git config push.autoSetupRemote true
 
 lambda-rclone-from-local:
-	rclone copy . lambda:/home/ubuntu/filesystem2/ -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc";
+	rclone copy . lambda:/home/ubuntu/filesystem3/HuggingfaceTransformer -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude ".git/**" --exclude "wandb/**" --exclude "*.pt.trace.json" --exclude "checkpoints/**";
+	rclone copy ../../data lambda:/home/ubuntu/filesystem3/data -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude "*.pt.trace.json";
 
 install-flash-attn:
 	uv pip installhttps://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.11/flash_attn-2.8.3+cu128torch2.7-cp310-cp310-linux_x86_64.whl
