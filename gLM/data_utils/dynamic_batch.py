@@ -143,6 +143,38 @@ def _get_length_adaptive_batches(
     return batched_indices
 
 
+def _get_token_budget_adaptive_batches(
+    indices: list[int],
+    lengths: list[int],
+    max_tokens_per_batch: int,
+    shuffle: bool = True,
+) -> list[list[int]]:
+    batched_indices = []
+    current_batch = []
+    current_token_count = 0
+
+    if shuffle:
+        indices = indices[:]  # Make a shallow copy
+        random.shuffle(indices)
+
+    for idx in indices:
+        if (
+            current_token_count + lengths[idx] > max_tokens_per_batch
+            and len(current_batch) > 0
+        ):
+            batched_indices.append(current_batch)
+            current_batch = []
+            current_token_count = 0
+
+        current_batch.append(idx)
+        current_token_count += lengths[idx]
+
+    # Flush leftovers
+    if current_batch:
+        batched_indices.append(current_batch)
+    return batched_indices
+
+
 class DynamicBatchSampler(Sampler):
     r"""
     Batch sampler that groups together samples of roughly the same length
@@ -299,8 +331,6 @@ class LengthAdaptiveBatchSampler(Sampler):
         random.seed(42)
         random.shuffle(batch_order)
 
-        print(f"[Rank {self.rank}] Total batches: {len(batched_indices)}")
-
         max_debug_batches = 10  # Number of batches to to print debug info for
 
         # Yield batches for this rank
@@ -329,4 +359,53 @@ class LengthAdaptiveBatchSampler(Sampler):
             )
             self.length = len(batched)
 
+        return self.length
+
+
+class TokenBudgetBatchSampler(Sampler):
+    """
+    A batch sampler that randomly groups samples into batches such that the total number of tokens per batch is
+    less than or equal to max_tokens_per_batch.
+    """
+
+    def __init__(
+        self,
+        dataset,
+        length_field="length",
+        max_tokens_per_batch: int = 8_192,
+        shuffle: bool = True,
+    ):
+        self.dataset = dataset
+        self.max_tokens_per_batch = max_tokens_per_batch
+        self.lengths = dataset[length_field]
+        self.sorted_indices = sorted(
+            range(len(self.lengths)), key=lambda i: -self.lengths[i]
+        )
+        self.shuffle = shuffle
+        self.length = None
+        if is_initialized():
+            self.rank = get_rank()
+            self.world_size = get_world_size()
+        else:
+            self.rank = 0
+            self.world_size = 1
+
+    def __iter__(self):
+        indices = self.sorted_indices[self.rank :: self.world_size]
+        batched_indices = _get_token_budget_adaptive_batches(
+            indices, self.lengths, self.max_tokens_per_batch, shuffle=self.shuffle
+        )
+        for batch in batched_indices:
+            yield batch
+
+    def __len__(self):
+        if self.length is None:
+            batched = _get_token_budget_adaptive_batches(
+                self.sorted_indices,
+                self.lengths,
+                self.max_tokens_per_batch,
+                shuffle=False,
+            )
+            self.length = len(batched)
+            print(f"Number of batches per epoch: {self.length}")
         return self.length
