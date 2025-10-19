@@ -23,7 +23,7 @@ echo "Selected MASTER_PORT: $MASTER_PORT"
 
 torchrun \
     --nnodes=1 \
-    --nproc-per-node=2 \
+    --nproc-per-node=1 \
     python_scripts/train_modernBERT.py \
     --run-name modernBERT-flash-attn \
     --tokenizer-path ./char_tokenizer \
