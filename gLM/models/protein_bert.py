@@ -1,6 +1,7 @@
 from transformers import (
     ModernBertConfig,
     ModernBertForMaskedLM,
+    ModernBertModel
 )
 
 
@@ -13,10 +14,10 @@ class ProteinBertModel:
         config = ModernBertConfig(
             vocab_size=self.vocab_size,
             max_position_embeddings=8192,
-            num_hidden_layers=24,
-            num_attention_heads=20,
-            hidden_size=1600,
-            intermediate_size=6656,
+            num_hidden_layers=12,
+            num_attention_heads=12,
+            hidden_size=768,
+            intermediate_size=3072,
             type_vocab_size=1,
             hidden_activation="gelu",
             global_attn_every_n_layers=3,
@@ -30,5 +31,6 @@ class ProteinBertModel:
             cls_token_id=self.tokenizer.cls_token_id,
             sep_token_id=self.tokenizer.sep_token_id,
         )
-        model = ModernBertForMaskedLM(config)
+        # model = ModernBertForMaskedLM(config)
+        model = ModernBertModel(config)
         return model

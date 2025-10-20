@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_pre_trained_modernBERT_665M_2
+#SBATCH --job-name=train_pre_trained_modernBERT_665M_3
 #SBATCH --partition=reservation
 #SBATCH --reservation=brandeslab_reservation
 #SBATCH --gres=gpu:a100:4
@@ -59,15 +59,42 @@ cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 # === Use a random master port for torch distributed ===
 export MASTER_PORT=$((29500 + RANDOM % 1000))
 
+# torchrun \
+#     --nnodes=1 \
+#     --nproc-per-node=4 \
+#     --master_addr=${MASTER_ADDR} \
+#     --master_port=${MASTER_PORT} \
+#     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
+#     --rdzv_backend=c10d \
+#     python_scripts/train_pre_trained_modernBERT.py \
+#     --run-name pre_trained_modernBERT_665M_3 \
+#     --tokenizer-path ./char_tokenizer \
+#     --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
+#     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
+#     --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+#     --output-dir /gpfs/data/brandeslab/model_checkpts \
+#     --max-steps 3_000_000 \
+#     --per_device_train_batch_size 4 \
+#     --gradient_accumulation_steps 64 \
+#     --base_batch_size 4 \
+#     --per_device_eval_batch_size 4 \
+#     --learning_rate 1e-4 \
+#     --vep_eval_steps 3000 \
+#     --dataloader_num_workers 4 \
+#     --dataloader_persistent_workers True \
+#     --dataloader_prefetch_factor 2 \
+#     --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_665M_2/checkpoint-3000 \
+#     --eval_strategy "no" \
+#     --save_steps 1500
+
+
 torchrun \
     --nnodes=1 \
     --nproc-per-node=4 \
     --master_addr=${MASTER_ADDR} \
     --master_port=${MASTER_PORT} \
-    --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
-    --rdzv_backend=c10d \
     python_scripts/train_pre_trained_modernBERT.py \
-    --run-name pre_trained_modernBERT_665M_2 \
+    --run-name pre_trained_modernBERT_665M_3 \
     --tokenizer-path ./char_tokenizer \
     --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
@@ -75,7 +102,7 @@ torchrun \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
     --max-steps 3_000_000 \
     --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 8 \
+    --gradient_accumulation_steps 64 \
     --base_batch_size 4 \
     --per_device_eval_batch_size 4 \
     --learning_rate 1e-4 \
@@ -83,9 +110,6 @@ torchrun \
     --dataloader_num_workers 4 \
     --dataloader_persistent_workers True \
     --dataloader_prefetch_factor 2 \
-    --ckpt_path /gpfs/data/brandeslab/model_checkpts/modernBERT_665M/checkpoint-90000 \
+    --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_665M_2/checkpoint-3000 \
     --eval_strategy "no" \
-    --save_steps 1500 \
-    --dynamic-batching
-
-
+    --save_steps 1500

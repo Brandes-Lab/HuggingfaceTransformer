@@ -75,8 +75,8 @@ torchrun \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
     --max-steps 3_000_000 \
     --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 8 \
-    --base_batch_size 2 \
+    --gradient_accumulation_steps 64 \
+    --base_batch_size 1 \
     --per_device_eval_batch_size 4 \
     --learning_rate 1e-4 \
     --vep_eval_steps 3000 \
@@ -85,7 +85,6 @@ torchrun \
     --dataloader_prefetch_factor 2 \
     --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_1B/checkpoint-45000 \
     --eval_strategy "no" \
-    --save_steps 1500 \
-    --dynamic-batching
+    --save_steps 1500
 
 
