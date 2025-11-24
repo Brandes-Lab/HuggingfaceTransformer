@@ -141,6 +141,7 @@ class CustomTrainingArguments(TrainingArguments):
     remove_unused_columns: bool = field(default=False)
     group_by_length: bool = field(default=False)
     length_column_name: str = field(default="length")
+    include_num_input_tokens_seen: str = field(default="non_padding")
 
 
 @dataclass
@@ -252,7 +253,6 @@ def main():
     # )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
-
     trainer.train()
 
 

@@ -61,8 +61,6 @@
                 "token_budget",
                 "--max-tokens-per-batch",
                 "8192",
-                "--per-device-train-batch-size",
-                "8",
             ]
         },
     ]

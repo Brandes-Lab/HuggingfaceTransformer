@@ -41,8 +41,8 @@ lambda-git-config:
 	git config push.autoSetupRemote true
 
 lambda-rclone-from-local:
-	rclone copy . lambda:/home/ubuntu/filesystem3/HuggingfaceTransformer -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude ".git/**" --exclude "wandb/**" --exclude "*.pt.trace.json" --exclude "checkpoints/**";
-	rclone copy ../../data lambda:/home/ubuntu/filesystem3/data -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude "*.pt.trace.json";
+	rclone copy . lambda:/home/ubuntu/HuggingfaceTransformer -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude "wandb/**" --exclude "*.pt.trace.json" --exclude "checkpoints/**";
+	rclone copy ../../data lambda:/home/ubuntu/data -P  --exclude ".venv/**" --exclude "__pycache__/**" --exclude "*.pyc" --exclude ".mypy_cache/**" --exclude "*.pt.trace.json";
 
 install-flash-attn:
 	uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.17/flash_attn-2.8.3+cu128torch2.9-cp310-cp310-linux_x86_64.whl
