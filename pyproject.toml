@@ -50,6 +50,9 @@ evaluation = [
     "evaluate>=0.4.0",
     "seqeval>=1.2.0",
 ]
+flash-attn = [
+    "flash-attn"
+]
 
 [project.urls]
 Homepage = "https://github.com/BrandesLab/HuggingfaceTransformer"
@@ -142,3 +145,6 @@ exclude_lines = [
     "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch"]

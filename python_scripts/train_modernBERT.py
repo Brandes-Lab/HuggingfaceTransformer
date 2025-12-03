@@ -143,7 +143,6 @@ class CustomTrainingArguments(TrainingArguments):
     length_column_name: str = field(default="length")
     include_num_input_tokens_seen: str = field(default="non_padding")
 
-
 @dataclass
 class WandbArguments:
     """Arguments for Weights & Bias initialization."""
@@ -243,14 +242,14 @@ def main():
             data_collator=data_collator,
         )
 
-    # trainer.add_callback(
-    #     ZeroShotVEPEvaluationCallback(
-    #         tokenizer=tokenizer,
-    #         input_csv=data_args.vep_input_csv,
-    #         trainer=trainer,
-    #         eval_every_n_steps=training_args.vep_eval_steps,
-    #     )
-    # )
+    trainer.add_callback(
+        ZeroShotVEPEvaluationCallback(
+            tokenizer=tokenizer,
+            input_csv=data_args.vep_input_csv,
+            trainer=trainer,
+            eval_every_n_steps=training_args.vep_eval_steps,
+        )
+    )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
     trainer.train()

@@ -194,3 +194,6 @@ secrets.yaml
 .cache/
 transformers_cache/
 huggingface_cache/
+
+python_scripts/fun/
+slurm_scripts/fun/
