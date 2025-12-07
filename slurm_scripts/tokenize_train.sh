@@ -27,3 +27,5 @@ echo "Caching to: $HF_HOME"
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
 python python_scripts/tokenize_uniref.py --split val
+
+

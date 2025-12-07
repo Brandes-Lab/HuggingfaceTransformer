@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=dms_modernBERT_34M
+#SBATCH --job-name=dms_control_modernBERT_113M
 #SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=4
@@ -29,8 +29,24 @@ echo "Using MASTER_PORT=$MASTER_PORT"
 # Move to project directory
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
+# -------------------------------
+# Run pretrained fine-tuning benchmark
+# -------------------------------
+# Pass any number of checkpoints as CLI arguments to this script.
+# Example:
+# sbatch slurm_scripts/dms.sh \
+#   /gpfs/data/brandeslab/model_checkpts/modernBERT_113M/checkpoint-20000 \
+#   /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_113M/checkpoint-50000 \
+#   /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_113M/checkpoint-170000 \
+#   /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_113M_2/checkpoint-60000
 
-torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/dms_benchmark.py --model_name "$1"
-# sbatch slurm_scripts/dms.sh modernBERT_34M
+# torchrun --nproc_per_node=1 --master_port=$MASTER_PORT \
+#   python_scripts/dms_benchmark.py \
+#   --mode pre_trained_bert \
+#   --checkpoints "$@"
+
+torchrun --nproc_per_node=1 --master_port=$MASTER_PORT \
+  python_scripts/dms_benchmark.py \
+  --mode control
 
 
