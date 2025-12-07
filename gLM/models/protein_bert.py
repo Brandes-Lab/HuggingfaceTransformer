@@ -6,9 +6,10 @@ from transformers import (
 
 
 class ProteinBertModel:
-    def __init__(self, vocab_size, tokenizer):
+    def __init__(self, vocab_size, tokenizer, attn_implementation):
         self.vocab_size = vocab_size
         self.tokenizer = tokenizer
+        self.attn_implementation = attn_implementation
 
     def build(self):
         config = ModernBertConfig(
@@ -31,6 +32,7 @@ class ProteinBertModel:
             cls_token_id=self.tokenizer.cls_token_id,
             sep_token_id=self.tokenizer.sep_token_id,
         )
-        # model = ModernBertForMaskedLM(config)
-        model = ModernBertModel(config)
+        config._attn_implementation = self.attn_implementation
+        print(f"Using {self.attn_implementation} attention")
+        model = ModernBertForMaskedLM(config)
         return model

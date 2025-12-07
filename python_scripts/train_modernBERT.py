@@ -1,30 +1,27 @@
 # type: ignore
-from dataclasses import dataclass, field # type: ignore
 import os
+from dataclasses import dataclass, field  # type: ignore
+from typing import Literal
 
-import numpy as np # type: ignore
-import torch    # type: ignore
-import pandas as pd
-import matplotlib.pyplot as plt
+import torch  # type: ignore
 from datasets import load_from_disk
 from transformers import (
+    DataCollatorForLanguageModeling,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
-    DataCollatorForLanguageModeling,
 )
 
 import wandb
 from gLM.callbacks import (
     ElapsedTimeLoggerCallback,
-    ZeroShotVEPEvaluationCallback,
     LossPrintCallback,
+    ZeroShotVEPEvaluationCallback,
 )
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
-
 
 if torch.cuda.is_available():
     print("Using CUDA")
@@ -51,6 +48,10 @@ class ModelArguments:
     )
     max_position_embeddings: int = field(
         default=8192, metadata={"help": "Maximum sequence length for the model"}
+    )
+    attn_implementation: Literal["flash_attention_2", "sdpa"] = field(
+        default="flash_attention_2",
+        metadata={"help": "Attention implementation to use"},
     )
 
 
@@ -116,16 +117,16 @@ class CustomTrainingArguments(TrainingArguments):
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
-    dynamic_batching: bool = field(
-        default=True, metadata={"help": "Whether to use dynamic batching"}
+    batch_sampler: Literal["default", "length_adaptive", "token_budget"] = field(
+        default="default", metadata={"help": "Batch sampler to use"}
     )
     max_tokens_per_batch: int = field(
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
     )
     shuffle_batches: bool = field(
-        default=True, metadata={"help": "Whether to shuffle batches after bucketing by length"}
+        default=True,
+        metadata={"help": "Whether to shuffle batches after bucketing by length"},
     )
-
 
     ## DDP arguments
     local_rank = (int(os.environ.get("LOCAL_RANK", 0)),)
@@ -145,6 +146,7 @@ class CustomTrainingArguments(TrainingArguments):
     remove_unused_columns: bool = field(default=False)
     group_by_length: bool = field(default=False)
     length_column_name: str = field(default="length")
+    include_num_input_tokens_seen: str = field(default="non_padding")
 
     base_batch_size: int = field(default=8, metadata={"help": "Base batch size for dynamic batching"})
 
@@ -201,7 +203,9 @@ def main():
     print_rank0("Tokenizer vocab size:", tokenizer.vocab_size)
 
     # Build model
-    model = ProteinBertModel(tokenizer.vocab_size, tokenizer).build()
+    model = ProteinBertModel(
+        tokenizer.vocab_size, tokenizer, model_args.attn_implementation
+    ).build()
     model.gradient_checkpointing_enable()
     model.to(training_args.local_rank)
     # model.to(device=DEVICE)
@@ -232,14 +236,8 @@ def main():
         mlm=True,
         mlm_probability=training_args.mlm_probability,
     )
-    if training_args.dynamic_batching:
-        # data_collator = TruncatingDataCollatorForMLM(
-        #     tokenizer=tokenizer,
-        #     mlm=True,
-        #     mlm_probability=training_args.mlm_probability,
-        #     max_length=training_args.max_tokens_per_batch,
-        # )
-        print(f"using CustomBatchSizeTrainer")
+    if training_args.batch_sampler != "default":
+        print("using CustomBatchSizeTrainer")
         trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
@@ -268,7 +266,6 @@ def main():
     )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
-
     trainer.train()
 
 
