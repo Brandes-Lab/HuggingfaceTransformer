@@ -18,6 +18,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         max_len=8192,
         eval_every_n_steps=20000,
         batch_size=8,
+        training_type="phylo",
     ):
         self.tokenizer = tokenizer
         self.input_csv = input_csv
@@ -26,6 +27,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         self.trainer = trainer
         self.batch_size = batch_size
         self.start_time = time.time()
+        self.training_type = training_type
 
         self.df = pd.read_csv(
             input_csv,
@@ -34,6 +36,14 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         )
 
     def compute_log_odds_batch(self, model, seqs, poses, refs, alts):
+        if self.training_type == "MLM":
+            return self.compute_log_odds_MLM(model, seqs, poses, refs, alts)
+        elif self.training_type == "phylo":
+            return self.compute_log_odds_phylo(model, seqs, poses, refs, alts)
+        else:
+            raise ValueError(f"Unknown training type: {self.training_type}")
+
+    def compute_log_odds_MLM(self, model, seqs, poses, refs, alts):
         valid_data = []
         for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
             if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
@@ -77,6 +87,39 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
 
         return results
 
+    
+    def compute_log_odds_phylo(self, model, seqs, poses, refs, alts):
+        results = [None] * len(seqs)
+        device = next(model.parameters()).device
+
+        # Prepare batch 
+        inputs = self.tokenizer(
+            list(seqs),
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
+            max_length=self.max_len,
+        )
+
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        with torch.no_grad():
+            logits = model(**inputs).logits        # shape: (B, L, Vocab_size) 
+
+        for batch_idx, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
+            if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
+                ref_id = self.tokenizer.convert_tokens_to_ids(ref)
+                alt_id = self.tokenizer.convert_tokens_to_ids(alt)
+                if ref_id is None or alt_id is None:
+                    continue
+
+                prob = torch.nn.functional.softmax(logits[batch_idx, pos], dim=0)
+                log_odds = (torch.log(prob[alt_id]) - torch.log(prob[ref_id])).item()
+                results[batch_idx] = log_odds
+        
+        return results
+        
+    
     def run_vep_eval(self, model, step_id):
         rank = get_rank() if is_initialized() else 0
         world_size = (
@@ -115,7 +158,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
 
                 for j, score in enumerate(batch_scores):
                     if score is not None:
-                        preds_shard[i + j] = -float(score)
+                        preds_shard[i + j] = -float(score) # negate the score, higher = more pathogenic, lower = benign
 
                 if i % 20000 == 0:
                     print(f"[Rank {rank}] Progress: {i}/{len(shard_indices)}", flush=True)

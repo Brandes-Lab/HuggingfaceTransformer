@@ -9,3 +9,4 @@ class TokenizerLoader:
 
     def load(self):
         return PreTrainedTokenizerFast.from_pretrained(self.tokenizer_path)
+

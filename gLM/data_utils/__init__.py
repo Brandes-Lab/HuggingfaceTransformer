@@ -4,10 +4,12 @@ from .dynamic_batch import (
     TokenBudgetBatchSampler,
 )
 from .truncating_collator import TruncatingDataCollatorForMLM
+from .uniref_cluster_sampler import RandomClusterSampler
 
 __all__ = [
     "DynamicBatchSampler",
     "TruncatingDataCollatorForMLM",
     "LengthAdaptiveBatchSampler",
-    "TokenBudgetBatchSampler",
+    "TokenBudgetBatchSampler", 
+    "RandomClusterSampler"
 ]

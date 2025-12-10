@@ -38,7 +38,7 @@ http://localhost:${port}
 # ---------------------- Environment ----------------------
 module load anaconda3
 source /gpfs/share/apps/anaconda3/gpu/2023.09/etc/profile.d/conda.sh
-conda deactivate
+# conda deactivate
 conda activate /gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert
 echo "Conda env: $CONDA_PREFIX"
 

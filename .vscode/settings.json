@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "/gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert/bin/python",
+    "python.venvPath": "/gpfs/data/brandeslab/User/as12267/.conda/envs", 
+    "python.analysis.memory.keepLibraryAst": false,
+    "python.analysis.indexing": true,
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert/bin/python"
+    ]
+}
