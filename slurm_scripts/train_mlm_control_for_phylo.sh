@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_modernBERT_34M_phylo
+#SBATCH --job-name=train_modernBERT_34M_mlm_15
 #SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=16
@@ -90,8 +90,8 @@ torchrun \
   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
   --rdzv_backend=c10d \
   python_scripts/train_modernBERT.py \
-  --run-name modernBERT_34M_phylo \
-  --training_type "phylo" \
+  --run-name modernBERT_34M_phylo_mlm_15 \
+  --training_type "MLM" \
   --wandb_project "phylo-llm" \
   --tokenizer-path ./phylo_char_tokenizer_updated \
   --train-dataset-path /gpfs/data/brandeslab/Data/uniref/uniref90_clusters.parquet \
@@ -100,6 +100,7 @@ torchrun \
   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
   --output-dir /gpfs/data/brandeslab/model_checkpts \
   --max-steps 3_000_000 \
+  --mlm_probability 0.15 \
   --logging_steps 32 \
   --batch_sampler "phylo_default" \
   --per_device_train_batch_size 8 \

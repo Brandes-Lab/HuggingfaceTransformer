@@ -208,19 +208,27 @@ def main():
         wandb.init(mode="disabled")
 
     # Load tokenizer
-    if training_args.training_type == "MLM":
-        tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
-        pad_id = tokenizer.pad_token_id
-        gap_id = None
-        print("MLM Tokenizer loaded.")
+    # if training_args.training_type == "MLM":
+    #     tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
+    #     pad_id = tokenizer.pad_token_id
+    #     gap_id = None
+    #     print("MLM Tokenizer loaded.")
 
-    elif training_args.training_type == "phylo":
-        tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path).load()
-        pad_id = tokenizer.pad_token_id
-        gap_id = tokenizer.convert_tokens_to_ids("-")
-        print("Phylo Tokenizer loaded. GAP ID:", gap_id)
+    # elif training_args.training_type == "phylo":
+    #     tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path).load()
+    #     pad_id = tokenizer.pad_token_id
+    #     gap_id = tokenizer.convert_tokens_to_ids("-")
+    #     print("Phylo Tokenizer loaded. GAP ID:", gap_id)
 
-    
+    tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path)
+    pad_id = tokenizer.pad_token_id
+    mask_id = tokenizer.mask_token_id
+    non_gap_id = tokenizer.convert_tokens_to_ids("-") 
+    gap_id = tokenizer.convert_tokens_to_ids("[GAP]")
+    print("Phylo Tokenizer loaded. GAP ID:", gap_id)
+    print("Mask ID:", mask_id)
+    print("Non-GAP ID:", non_gap_id)
+    print("GAP ID:", gap_id)
     print_rank0("Tokenizer vocab size:", tokenizer.vocab_size)
 
     # Build model
@@ -235,32 +243,32 @@ def main():
     print("Hidden size actually used:", model.config.hidden_size)
 
     # Load datasets
-    if training_args.training_type == "MLM":
-        train_ds = load_from_disk(data_args.train_dataset_path)
-        # train_ds = train_ds.select(range(500))  # for testing
-        val_ds = load_from_disk(data_args.val_dataset_path)
-        val_ds = val_ds.shuffle(seed=42)
+    # if training_args.training_type == "MLM":
+    #     train_ds = load_from_disk(data_args.train_dataset_path)
+    #     # train_ds = train_ds.select(range(500))  # for testing
+    #     val_ds = load_from_disk(data_args.val_dataset_path)
+    #     val_ds = val_ds.shuffle(seed=42)
         
-        # Select first 500k after shuffling
-        val_subset = val_ds.select(range(500_000))
+    #     # Select first 500k after shuffling
+    #     val_subset = val_ds.select(range(500_000))
 
-        # Use MLM collator
-        data_collator = create_mlm_collator(
-        tokenizer,
-        mlm_probability=training_args.mlm_probability
-        )
-    elif training_args.training_type == "phylo":
-        train_ds = UniRefClusterIterableDataset(
-            parquet_path=data_args.train_dataset_path,
-            index_db_path=data_args.index_db_path,
-            fasta_path=data_args.fasta_path, 
-            tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
-            max_seq_len=model_args.max_position_embeddings,
-        )
-        val_ds = None
-        data_collator = SequencePairCollator(
-            pad_id = tokenizer.pad_token_id,
-        )
+    #     # Use MLM collator
+    #     data_collator = create_mlm_collator(
+    #     tokenizer,
+    #     mlm_probability=training_args.mlm_probability
+    #     )
+    # elif training_args.training_type == "phylo":
+    #     train_ds = UniRefClusterIterableDataset(
+    #         parquet_path=data_args.train_dataset_path,
+    #         index_db_path=data_args.index_db_path,
+    #         fasta_path=data_args.fasta_path, 
+    #         tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
+    #         max_seq_len=model_args.max_position_embeddings,
+    #     )
+    #     val_ds = None
+    #     data_collator = SequencePairCollator(
+    #         pad_id = tokenizer.pad_token_id,
+    #     )
 
     # print("Max train length:", max(train_ds["length"]))
     # print(f"Number of seqs of length 8192: {(np.array(train_ds['length'])==8192).sum()}")
@@ -271,7 +279,31 @@ def main():
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
+    train_ds = UniRefClusterIterableDataset(
+            parquet_path=data_args.train_dataset_path,
+            index_db_path=data_args.index_db_path,
+            fasta_path=data_args.fasta_path, 
+            tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
+            max_seq_len=model_args.max_position_embeddings,
+            training_type=training_args.training_type,
+        )
+
+    val_ds = None  # No eval dataset for iterable dataset
+
+    if training_args.training_type == "MLM":
+        print(f"Using MLM collator for training type: {training_args.training_type}")
+        print(f"Using {training_args.mlm_probability} masking probability")
+        data_collator = create_mlm_collator(
+            tokenizer,
+            mlm_probability=training_args.mlm_probability
+        )
+    elif training_args.training_type == "phylo":
+        print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
+        data_collator = SequencePairCollator(
+            pad_id = tokenizer.pad_token_id,
+        )
     
+
     if training_args.batch_sampler == "phylo_default":
         print("using phylo_default Trainer")
         trainer = PhyloTrainer(

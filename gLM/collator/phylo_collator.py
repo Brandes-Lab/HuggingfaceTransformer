@@ -13,7 +13,10 @@ class SequencePairCollator:
         labels = []
         attention_masks = []
 
-        for item in batch:
+        print(f"[Collator] Batch max input length: {max_len}")
+        for i, item in enumerate(batch):
+            print(f"  Sample {i} input length: {len(item['input_ids'])}")
+
             # print(f"SEQ LEN: {len(item['input_ids'])}")
 
             n = len(item["input_ids"])
