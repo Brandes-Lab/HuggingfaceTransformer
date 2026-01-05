@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=train_modernBERT_34M_dynamic_batching
-#SBATCH --partition=a100_short
+#SBATCH --partition=gl40s_short
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:A100:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=0
-#SBATCH --time=03-00:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 

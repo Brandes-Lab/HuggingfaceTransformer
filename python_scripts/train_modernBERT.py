@@ -13,6 +13,7 @@ from transformers import (
 )
 
 import wandb
+import time
 from gLM.callbacks import (
     ElapsedTimeLoggerCallback,
     LossPrintCallback,
@@ -133,12 +134,16 @@ class CustomTrainingArguments(TrainingArguments):
     group_by_length: bool = field(default=False)
     length_column_name: str = field(default="length")
     include_num_input_tokens_seen: str = field(default="non_padding")
-
+    lr_scheduler_type : str = field(default="linear")
+    warmup_steps: int = field(default=0)
     base_batch_size: int = field(default=8, metadata={"help": "Base batch size for dynamic batching"})
 
 @dataclass
 class DataArguments:
     """Arguments for data configuration."""
+    train_dataset_type: Literal["iterable", "map"] = field(
+        default="iterable", metadata={"help": "Type of training dataset"}
+    )
     train_dataset_path: str = field(
         default="/gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train",
         metadata={"help": "Path to the training dataset"},
@@ -221,6 +226,7 @@ def main():
     #     print("Phylo Tokenizer loaded. GAP ID:", gap_id)
 
     tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path)
+    print(f"Using tokenizer from: {model_args.tokenizer_path}")
     pad_id = tokenizer.pad_token_id
     mask_id = tokenizer.mask_token_id
     non_gap_id = tokenizer.convert_tokens_to_ids("-") 
@@ -279,16 +285,26 @@ def main():
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
 
-    train_ds = UniRefClusterIterableDataset(
-            parquet_path=data_args.train_dataset_path,
-            index_db_path=data_args.index_db_path,
-            fasta_path=data_args.fasta_path, 
-            tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
-            max_seq_len=model_args.max_position_embeddings,
-            training_type=training_args.training_type,
-        )
+    if data_args.train_dataset_type == "map":
+        print(f"using pre-tokenized dataset")
+        train_ds = load_from_disk(data_args.train_dataset_path)
+        # train_ds = train_ds.select(range(500))  # for testing
+        val_ds = load_from_disk(data_args.val_dataset_path)
+        val_ds = val_ds.shuffle(seed=42)
+    
+    elif data_args.train_dataset_type == "iterable":
+        print(f"using iterable dataset")
 
-    val_ds = None  # No eval dataset for iterable dataset
+        train_ds = UniRefClusterIterableDataset(
+                parquet_path=data_args.train_dataset_path,
+                index_db_path=data_args.index_db_path,
+                fasta_path=data_args.fasta_path, 
+                tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
+                max_seq_len=model_args.max_position_embeddings,
+                training_type=training_args.training_type,
+                batch_size=training_args.per_device_train_batch_size 
+            )
+        val_ds = None  # No eval dataset for iterable dataset
 
     if training_args.training_type == "MLM":
         print(f"Using MLM collator for training type: {training_args.training_type}")
@@ -297,12 +313,20 @@ def main():
             tokenizer,
             mlm_probability=training_args.mlm_probability
         )
+    # elif training_args.training_type == "phylo":
+    #     print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
+    #     data_collator = SequencePairCollator(
+    #         pad_id = tokenizer.pad_token_id,
+    #     )
+
     elif training_args.training_type == "phylo":
         print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
         data_collator = SequencePairCollator(
-            pad_id = tokenizer.pad_token_id,
-        )
-    
+                tokenizer=tokenizer,
+                padding=True,
+                return_tensors="pt",
+                label_pad_token_id=-100
+            )
 
     if training_args.batch_sampler == "phylo_default":
         print("using phylo_default Trainer")
@@ -352,8 +376,38 @@ def main():
     )
 
     trainer.add_callback(ElapsedTimeLoggerCallback())
-    trainer.add_callback(LossPrintCallback())
-    
+    # trainer.add_callback(LossPrintCallback())
+    # print_rank0("\nInspecting shapes of first few batches...")
+    # train_dataloader = trainer.get_train_dataloader()
+
+    # for i, batch in enumerate(train_dataloader):
+    #     print_rank0(f"\nBatch {i}")
+    #     for k, v in batch.items():
+    #         if isinstance(v, torch.Tensor):
+    #             print_rank0(f"  {k}: {v.shape}")
+    #         else:
+    #             print_rank0(f"  {k}: type={type(v)}")
+    #     if i == 3:  # stop after 4 batches
+    #         break
+
+    print("Benchmarking: Fetching 100 batches from train_dataloader...")
+
+    train_dataloader = trainer.get_train_dataloader()
+
+    print(f"DataLoader num_workers = {train_dataloader.num_workers}")
+    print(f"DataLoader prefetch_factor = {train_dataloader.prefetch_factor}")
+    print(f"DataLoader persistent_workers = {train_dataloader.persistent_workers}")
+
+
+    start = time.time()
+    for i, batch in enumerate(train_dataloader):
+        if i == 100:
+            break
+    end = time.time()
+
+    print(f"Fetched 100 batches in {end - start:.2f} seconds")
+
+
     trainer.train()
 
 

@@ -2,107 +2,122 @@ import torch
 from torch.utils.data import IterableDataset
 import random
 from gLM.data_utils.uniref_cluster_sampler import RandomClusterSampler
+from gLM.data_utils.uniref_cluster_sampler import InMemoryClusterSampler
+from gLM.data_utils.uniref_cluster_sampler import CachedRowGroupClusterSampler
 from gLM.data_utils.seq_pair_sampler import pick_pairs
 from gLM.sequences.seq_fetcher import SequenceFetcher
 from gLM.sequences.pairwise_align import align_pair, percent_identity
 from gLM.tokenizers.phylo_tokenizer import PhyloTokenizerLoader
+from torch.utils.data import get_worker_info
+import os
 
 
 class UniRefClusterIterableDataset(IterableDataset):
-    def __init__(self, parquet_path, index_db_path, fasta_path, tokenizer, max_seq_len, training_type):
+    def __init__(self, parquet_path, index_db_path, fasta_path, tokenizer, max_seq_len, training_type, batch_size):
         super().__init__()
-        self.sampler = RandomClusterSampler(parquet_path)
+        # self.sampler = RandomClusterSampler(parquet_path)
+        # self.sampler = InMemoryClusterSampler(parquet_path)
+        # self.sampler = CachedRowGroupClusterSampler(parquet_path)
+        self.parquet_path = parquet_path
         self.fasta_path = fasta_path
         self.index_db_path = index_db_path
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
         self.training_type = training_type
+        self.batch_size = batch_size
+        self.fetcher = None # Will be initialized per worker
     
+    def init_worker(self):
+        self.fetcher = SequenceFetcher(self.fasta_path, self.index_db_path)
+
+        worker_info = get_worker_info()
+        seed = worker_info.id if worker_info else 0
+        random.seed(seed)
+
+        # self.sampler = InMemoryClusterSampler(self.parquet_path)
+        self.sampler = CachedRowGroupClusterSampler(self.parquet_path)
+
     def __iter__(self):
-        # Per-worker instance of FASTA fetcher
-        fetcher = SequenceFetcher(self.fasta_path, self.index_db_path)
+        # worker_info = get_worker_info()
+        # if worker_info is not None:
+        #     print(f"[Worker {worker_info.id}/{worker_info.num_workers} | PID {os.getpid()}] Starting iterator")
+        if self.fetcher is None:
+            self.init_worker()
 
-        # infinite generator
         while True:
-            cluster = self.sampler.sample_clusters()
-            rep = cluster["representative_id"]
-            members = cluster["members"]
+            # MLM 
+            if self.training_type == "MLM":
+                raw_seqs = []
 
-            # print("REP:", rep, "MEMBERS:", members, type(members))
+                while len(raw_seqs) < self.batch_size:
+                    # cluster = self.sampler.sample_clusters()
+                    cluster = self.sampler.sample_cluster()
+                    rep = cluster["representative_id"]
+                    members = cluster["members"]
 
-            # skip empty clusters
-            if not members:
-                continue
-            
-            # Phylo modeling
-            if self.training_type == "phylo":
-                print("In the Uniref Iterable - Phylo branch")
-                # pick a pair
-                pair = pick_pairs(rep, members)
-                if pair is None:
-                    continue
-                seq1_id, seq2_id = pair
-                # print("PAIR:", seq1_id, seq2_id)
+                    # skip empty clusters
+                    if not members:
+                        continue
 
-                # fetch AA sequences
-                try:
-                    s1 = fetcher(seq1_id)
-                    s2 = fetcher(seq2_id)
-                except KeyError:
-                    # IDs missing in FASTA index → skip
-                    continue
+                    seq_id = random.choice(members + [rep])
+                    
+                    try:
+                        seq = self.fetcher(seq_id)
+                    except KeyError:
+                        continue
+
+                    seq = seq[:self.max_seq_len]
+                    raw_seqs.append(seq)
                 
-
-                # align sequences
-                a1, a2 = align_pair(s1, s2)
-                # Replace all '-' with '[GAP]'
-                a1 = a1.replace("-", "[GAP]")
-                a2 = a2.replace("-", "[GAP]")
-
-                tokens1 = self.tokenizer.tokenize(a1)
-                tokens2 = self.tokenizer.tokenize(a2)
-
-                assert len(tokens1) == len(tokens2), "Alignment mismatch after tokenization"
-
-                trunc_len = min(self.max_seq_len, len(tokens1))
-                tokens1 = tokens1[:trunc_len]
-                tokens2 = tokens2[:trunc_len]
-
-                a1 = ''.join(tokens1)
-                a2 = ''.join(tokens2)
-
-                # compute percent identity
-                pid = percent_identity(a1, a2)
-                # print("PID:", pid)
-
-                # tokenize
-                item = self.tokenizer.encode_aligned(a1, a2)
-
-                item["percent_identity"] = pid
-
-
-            elif self.training_type == "MLM":
-                # print("In the Uniref Iterable - MLM branch")
-                seq_id = random.choice(members + [rep])
-                
-                try:
-                    seq = fetcher(seq_id)
-                    # print(f'Fetched sequence for ID {seq_id}:, length: {len(seq)}')
-                except KeyError:
-                    continue
-
-                seq = seq[:self.max_seq_len]
-                # print(f'Truncated sequence for ID {seq_id}:, length: {len(seq)}')
-
-                # tokenize 
-                encoded = self.tokenizer(
-                    seq, 
+                # tokenize batch
+                tokenized_batch = self.tokenizer(
+                    raw_seqs,
                     padding='longest',
-                    truncation=True, 
+                    truncation=True,
                     max_length=self.max_seq_len,
                     return_tensors='pt'
                 )
-                # Squeeze out the extra batch dimension
-                item = {k: v.squeeze(0) for k, v in encoded.items()}
-            
-            yield item
+
+                for i in range(self.batch_size):
+                    item = {k: v[i] for k, v in tokenized_batch.items()}
+                    yield item
+
+            # Phylo 
+            elif self.training_type == "phylo":
+                aligned_pairs = []
+                percent_ids = []
+
+                while len(aligned_pairs) < self.batch_size:
+                    # cluster = self.sampler.sample_clusters()
+                    cluster = self.sampler.sample_cluster()
+                    rep = cluster["representative_id"]
+                    members = cluster["members"]
+                    # skip empty clusters
+                    if not members:
+                        continue
+                    pair = pick_pairs(rep, members)
+                    if pair is None:
+                        continue
+                    s1_id, s2_id = pair
+                    try:
+                        s1 = self.fetcher(s1_id)
+                        s2 = self.fetcher(s2_id)
+                    except KeyError:
+                        continue
+                    a1, a2 = align_pair(s1, s2)
+                    if len(a1) != len(a2):
+                        continue
+                    aligned_pairs.append((a1, a2))
+                    pid = percent_identity(a1, a2)
+                    percent_ids.append(pid)
+
+                # Tokenize batch
+                encoded_batch = self.tokenizer.batch_encode_aligned(
+                aligned_pairs,
+                max_length=self.max_seq_len,
+                )
+
+                for enc, pid in zip(encoded_batch, percent_ids):
+                    enc["percent_identity"] = pid
+                    yield enc
+                    

@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=train_modernBERT_34M_mlm_15
+#SBATCH --job-name=train_modernBERT_34M_mlm_6_lr_6e-4_bs_8192_cached_sampler
 #SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
 #SBATCH --time=03-00:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
@@ -57,31 +57,73 @@ cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 # === Use a random master port for torch distributed ===
 export MASTER_PORT=$((29500 + RANDOM % 1000))
 
-# torchrun \
-#     --nnodes=1 \
-#     --nproc-per-node=1 \
-#     --master_addr=${MASTER_ADDR} \
-#     --master_port=${MASTER_PORT} \
-#     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
-#     --rdzv_backend=c10d \
-#     python_scripts/train_modernBERT.py \
-#     --run-name modernBERT_34M_phylo \
-#     --tokenizer-path ./phylo_char_tokenizer \
-#     --train-dataset-path /gpfs/data/brandeslab/Data/uniref/uniref90_clusters.parquet \
-#     --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
-#     --output-dir /gpfs/data/brandeslab/model_checkpts \
-#     --max-steps 3_000_000 \
-#     --batch_sampler "default" \
-#     --per_device_train_batch_size 8 \
-#     --gradient_accumulation_steps 32 \
-#     --learning_rate 1e-3 \
-#     --vep_eval_steps 5_000 \
-#     --dataloader_num_workers 6 \
-#     --dataloader_persistent_workers True \
-#     --dataloader_prefetch_factor 2 \
-#     --eval_strategy "no" \
-#     --save_steps 5_000 \
     
+# torchrun \
+#   --nnodes=1 \
+#   --nproc-per-node=1 \
+#   --master_addr=${MASTER_ADDR} \
+#   --master_port=${MASTER_PORT} \
+#   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
+#   --rdzv_backend=c10d \
+#   python_scripts/train_modernBERT.py \
+#   --run-name modernBERT_34M_mlm_6_lr_2e-3 \
+#   --training_type "MLM" \
+#   --wandb_project "phylo-llm" \
+#   --tokenizer-path ./phylo_char_tokenizer_updated \
+#   --train-dataset-path /gpfs/data/brandeslab/Data/uniref/uniref90_clusters.parquet \
+#   --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
+#   --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
+#   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+#   --output-dir /gpfs/data/brandeslab/model_checkpts \
+#   --max-steps 3_000_000 \
+#   --mlm_probability 0.06 \
+#   --logging_steps 16 \
+#   --batch_sampler "phylo_default" \
+#   --per_device_train_batch_size 128 \
+#   --gradient_accumulation_steps 32 \
+#   --learning_rate 2e-3 \
+#   --vep_eval_steps 1000 \
+#   --dataloader_num_workers 16 \
+#   --dataloader_persistent_workers True \
+#   --dataloader_prefetch_factor 4 \
+#   --eval_strategy "no" \
+#   --save_strategy "no" 
+
+
+
+# torchrun \
+#   --nnodes=1 \
+#   --nproc-per-node=1 \
+#   --master_addr=${MASTER_ADDR} \
+#   --master_port=${MASTER_PORT} \
+#   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
+#   --rdzv_backend=c10d \
+#   python_scripts/train_modernBERT.py \
+#   --run-name modernBERT_34M_mlm_15_lr_1e-3_map_dataset \
+#   --training_type "MLM" \
+#   --wandb_project "phylo-llm" \
+#   --tokenizer-path ./char_tokenizer \
+#   --train_dataset_type "map" \
+#   --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
+#   --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
+#   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+#   --output-dir /gpfs/data/brandeslab/model_checkpts \
+#   --max-steps 3_000_000 \
+#   --mlm_probability 0.15 \
+#   --logging_steps 16 \
+#   --batch_sampler "phylo_default" \
+#   --per_device_train_batch_size 128 \
+#   --gradient_accumulation_steps 32 \
+#   --learning_rate 1e-3 \
+#   --vep_eval_steps 1000 \
+#   --dataloader_num_workers 16 \
+#   --dataloader_persistent_workers True \
+#   --dataloader_prefetch_factor 4 \
+#   --eval_strategy "no" \
+#   --save_strategy "no" 
+
+
+
 torchrun \
   --nnodes=1 \
   --nproc-per-node=1 \
@@ -90,27 +132,26 @@ torchrun \
   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
   --rdzv_backend=c10d \
   python_scripts/train_modernBERT.py \
-  --run-name modernBERT_34M_phylo_mlm_15 \
+  --run-name modernBERT_34M_mlm_6_lr_6e-4_bs_8192_cached_sampler \
   --training_type "MLM" \
   --wandb_project "phylo-llm" \
   --tokenizer-path ./phylo_char_tokenizer_updated \
+  --train_dataset_type "iterable" \
   --train-dataset-path /gpfs/data/brandeslab/Data/uniref/uniref90_clusters.parquet \
   --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
   --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
   --output-dir /gpfs/data/brandeslab/model_checkpts \
   --max-steps 3_000_000 \
-  --mlm_probability 0.15 \
-  --logging_steps 32 \
+  --mlm_probability 0.06 \
+  --logging_steps 16 \
   --batch_sampler "phylo_default" \
-  --per_device_train_batch_size 8 \
+  --per_device_train_batch_size 256 \
   --gradient_accumulation_steps 32 \
-  --learning_rate 1e-3 \
-  --vep_eval_steps 1_000 \
-  --dataloader_num_workers 8 \
+  --learning_rate 6e-4 \
+  --vep_eval_steps 1000 \
+  --dataloader_num_workers 32 \
   --dataloader_persistent_workers True \
-  --dataloader_prefetch_factor 4 \
+  --dataloader_prefetch_factor 16 \
   --eval_strategy "no" \
   --save_strategy "no" 
-
-

@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=train_modernBERT_1B
-#SBATCH --partition=reservation
-#SBATCH --reservation=brandeslab_reservation
-#SBATCH --gres=gpu:a100:4
+#SBATCH --job-name=train_modernBERT_1B_L40
+#SBATCH --partition=gl40s_short
+#SBATCH --gres=gpu:l40s:1
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=48
-#SBATCH --mem=0
-#SBATCH --time=13-00:00:00
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+#SBATCH --time=12:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
@@ -61,13 +60,15 @@ export MASTER_PORT=$((29500 + RANDOM % 1000))
 
 torchrun \
     --nnodes=1 \
-    --nproc-per-node=4 \
+    --nproc-per-node=1 \
     --master_addr=${MASTER_ADDR} \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
     python_scripts/train_modernBERT.py \
-    --run-name modernBERT_1B \
+    --run-name modernBERT_1B_L40 \
+    --training_type "MLM" \
+    --wandb_project "long_runs" \
     --tokenizer-path ./char_tokenizer \
     --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
@@ -79,11 +80,12 @@ torchrun \
     --per_device_eval_batch_size 4 \
     --learning_rate 1e-4 \
     --logging_steps 64 \
+    --batch_sampler "default" \
     --vep_eval_steps 1500 \
     --dataloader_num_workers 6 \
     --dataloader_persistent_workers True \
     --dataloader_prefetch_factor 2 \
     --eval_strategy "no" \
-    --save_steps 1500 \
+    --save_eval_strategy "no"
 
 
