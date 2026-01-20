@@ -5,7 +5,6 @@ from .dynamic_batch import (
 )
 from .truncating_collator import TruncatingDataCollatorForMLM
 from .uniref_cluster_sampler import RandomClusterSampler
-from .uniref_cluster_sampler import InMemoryClusterSampler
 from .uniref_cluster_sampler import CachedRowGroupClusterSampler
 
 __all__ = [
@@ -14,6 +13,5 @@ __all__ = [
     "LengthAdaptiveBatchSampler",
     "TokenBudgetBatchSampler", 
     "RandomClusterSampler", 
-    "InMemoryClusterSampler", 
     "CachedRowGroupClusterSampler",
 ]

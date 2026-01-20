@@ -2,7 +2,6 @@ import torch
 from torch.utils.data import IterableDataset
 import random
 from gLM.data_utils.uniref_cluster_sampler import RandomClusterSampler
-from gLM.data_utils.uniref_cluster_sampler import InMemoryClusterSampler
 from gLM.data_utils.uniref_cluster_sampler import CachedRowGroupClusterSampler
 from gLM.data_utils.seq_pair_sampler import pick_pairs
 from gLM.sequences.seq_fetcher import SequenceFetcher
@@ -15,9 +14,6 @@ import os
 class UniRefClusterIterableDataset(IterableDataset):
     def __init__(self, parquet_path, index_db_path, fasta_path, tokenizer, max_seq_len, training_type, batch_size):
         super().__init__()
-        # self.sampler = RandomClusterSampler(parquet_path)
-        # self.sampler = InMemoryClusterSampler(parquet_path)
-        # self.sampler = CachedRowGroupClusterSampler(parquet_path)
         self.parquet_path = parquet_path
         self.fasta_path = fasta_path
         self.index_db_path = index_db_path
@@ -34,7 +30,6 @@ class UniRefClusterIterableDataset(IterableDataset):
         seed = worker_info.id if worker_info else 0
         random.seed(seed)
 
-        # self.sampler = InMemoryClusterSampler(self.parquet_path)
         self.sampler = CachedRowGroupClusterSampler(self.parquet_path)
 
     def __iter__(self):
@@ -82,8 +77,8 @@ class UniRefClusterIterableDataset(IterableDataset):
                     item = {k: v[i] for k, v in tokenized_batch.items()}
                     yield item
 
-            # Phylo 
-            elif self.training_type == "phylo":
+            # Phylo Encoder Only
+            elif self.training_type == "phylo_encoder_only":
                 aligned_pairs = []
                 percent_ids = []
 
@@ -120,4 +115,60 @@ class UniRefClusterIterableDataset(IterableDataset):
                 for enc, pid in zip(encoded_batch, percent_ids):
                     enc["percent_identity"] = pid
                     yield enc
+
+            # Phylo Encoder-Decoder
+            elif self.training_type == "phylo_encoder_decoder":
+                input_seqs = []
+                target_seqs = []
+
+                while len(input_seqs) < self.batch_size:
+                    cluster = self.sampler.sample_cluster()
+                    rep = cluster["representative_id"]
+                    members = cluster["members"]
+
+                    if not members:
+                        continue
+                    
+                    pair = pick_pairs(rep, members)
+                    if pair is None:
+                        continue
+                    
+                    s1_id, s2_id = pair
+                    try:
+                        s1 = self.fetcher(s1_id)
+                        s2 = self.fetcher(s2_id)
+                    except KeyError:
+                        continue
+                    
+                    # Truncate to max length
+                    s1 = s1[:self.max_seq_len]
+                    s2 = s2[:self.max_seq_len]
+
+                    input_seqs.append(s1)
+                    target_seqs.append(s2)
+
+                # Tokenize batch
+                enc = self.tokenizer(
+                    input_seqs,
+                    padding='longest',
+                    truncation=True,
+                    max_length=self.max_seq_len,
+                    return_tensors='pt'
+                )
+
+                dec = self.tokenizer(
+                    target_seqs,
+                    padding='longest',
+                    truncation=True,
+                    max_length=self.max_seq_len,
+                    return_tensors='pt'
+                )
+
+                for i in range(self.batch_size):
+                    item = {
+                        "input_ids": enc["input_ids"][i],
+                        "attention_mask": enc["attention_mask"][i],
+                        "labels": dec["input_ids"][i],
+                    }
+                    yield item
                     

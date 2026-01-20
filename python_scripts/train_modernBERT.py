@@ -22,6 +22,7 @@ from gLM.callbacks import (
 )
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
+from gLM.models import ProteinT5Model
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, SequencePairCollator
@@ -47,6 +48,9 @@ def print_rank0(*args, **kwargs):
 @dataclass
 class ModelArguments:
     """Arguments for model configuration."""
+    model_type: Literal["ModernBERT", "T5"] = field(
+        default="ModernBERT", metadata={"help": "Type of model to use"}
+    )
 
     tokenizer_path: str = field(
         default="char_tokenizer", metadata={"help": "Path to the tokenizer directory"}
@@ -112,7 +116,7 @@ class CustomTrainingArguments(TrainingArguments):
         default=True,
         metadata={"help": "Whether to shuffle batches after bucketing by length"},
     )
-    training_type: Literal["MLM", "phylo"] = field(
+    training_type: Literal["MLM", "phylo_encoder_only", "phylo_encoder_decoder"] = field(
         default="MLM", metadata={"help": "Type of training to perform"}
     )
     ## DDP arguments
@@ -238,15 +242,28 @@ def main():
     print_rank0("Tokenizer vocab size:", tokenizer.vocab_size)
 
     # Build model
-    model = ProteinBertModel(
-        vocab_size=tokenizer.vocab_size, 
-        tokenizer=tokenizer, 
-        attn_implementation=model_args.attn_implementation
-    ).build()
-    model.gradient_checkpointing_enable()
-    model.to(training_args.local_rank)
-    print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-    print("Hidden size actually used:", model.config.hidden_size)
+    if model_args.model_type == "ModernBERT":
+        print("Using ModernBERT model...")
+
+        model = ProteinBertModel(
+            vocab_size=tokenizer.vocab_size, 
+            tokenizer=tokenizer, 
+            attn_implementation=model_args.attn_implementation
+        ).build()
+        model.gradient_checkpointing_enable()
+        model.to(training_args.local_rank)
+        print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+        print("Hidden size used:", model.config.hidden_size)
+    elif model_args.model_type == "T5":
+        print("Using T5 model...")
+        model = ProteinT5Model(
+            vocab_size=tokenizer.vocab_size, 
+            tokenizer=tokenizer
+        ).build()
+        model.gradient_checkpointing_enable()
+        model.to(training_args.local_rank)
+        print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+        print("Hidden size  used:", model.config.d_model)
 
     # Load datasets
     # if training_args.training_type == "MLM":
@@ -302,7 +319,7 @@ def main():
                 tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
                 max_seq_len=model_args.max_position_embeddings,
                 training_type=training_args.training_type,
-                batch_size=training_args.per_device_train_batch_size 
+                batch_size=training_args.per_device_train_batch_size
             )
         val_ds = None  # No eval dataset for iterable dataset
 
@@ -319,10 +336,11 @@ def main():
     #         pad_id = tokenizer.pad_token_id,
     #     )
 
-    elif training_args.training_type == "phylo":
+    elif training_args.training_type in ["phylo_encoder_only", "phylo_encoder_decoder"]:
         print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
         data_collator = SequencePairCollator(
                 tokenizer=tokenizer,
+                training_type=training_args.training_type,
                 padding=True,
                 return_tensors="pt",
                 label_pad_token_id=-100
@@ -360,7 +378,7 @@ def main():
         )
 
 
-    if training_args.training_type == "phylo":
+    if training_args.training_type == "phylo_encoder_only":
         trainer.add_callback(PercentIdentityLoggingCallback())
 
     trainer.add_callback(

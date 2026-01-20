@@ -18,7 +18,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         max_len=8192,
         eval_every_n_steps=20000,
         batch_size=8,
-        training_type="phylo",
+        training_type="phylo_encoder_decoder",
     ):
         self.tokenizer = tokenizer
         self.input_csv = input_csv
@@ -38,8 +38,10 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
     def compute_log_odds_batch(self, model, seqs, poses, refs, alts):
         if self.training_type == "MLM":
             return self.compute_log_odds_MLM(model, seqs, poses, refs, alts)
-        elif self.training_type == "phylo":
-            return self.compute_log_odds_phylo(model, seqs, poses, refs, alts)
+        elif self.training_type == "phylo_encoder_only":
+            return self.compute_log_odds_phylo_encoder_only(model, seqs, poses, refs, alts)
+        elif self.training_type == "phylo_encoder_decoder":
+            return self.compute_log_odds_encoder_decoder(model, seqs, poses, refs, alts)
         else:
             raise ValueError(f"Unknown training type: {self.training_type}")
 
@@ -88,7 +90,7 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         return results
 
     
-    def compute_log_odds_phylo(self, model, seqs, poses, refs, alts):
+    def compute_log_odds_phylo_encoder_only(self, model, seqs, poses, refs, alts):
         results = [None] * len(seqs)
         device = next(model.parameters()).device
 
@@ -118,6 +120,40 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
                 results[batch_idx] = log_odds
         
         return results
+    
+    def compute_log_odds_encoder_decoder(self, model, seqs, poses, refs, alts):
+        results = [None] * len(seqs)
+        device = next(model.parameters()).device
+
+        for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
+            if len(seq) > self.max_len or pos >= len(seq) or seq[pos] != ref:
+                continue
+
+            # Tokenize encoder input
+            input_enc = self.tokenizer(seq, return_tensors="pt", max_length=self.max_len, truncation=True).to(device)
+
+            ref_id = self.tokenizer.convert_tokens_to_ids(ref)
+            alt_id = self.tokenizer.convert_tokens_to_ids(alt)
+            if ref_id is None or alt_id is None:
+                continue
+
+            with torch.no_grad():
+                # Decode alt
+                decoder_input_alt = torch.tensor([[alt_id]], device=device)
+                outputs_alt = model(**input_enc, decoder_input_ids=decoder_input_alt)
+                logprobs_alt = torch.log_softmax(outputs_alt.logits[0, 0], dim=0)
+                logp_alt = logprobs_alt[alt_id]
+
+                # Decode ref
+                decoder_input_ref = torch.tensor([[ref_id]], device=device)
+                outputs_ref = model(**input_enc, decoder_input_ids=decoder_input_ref)
+                logprobs_ref = torch.log_softmax(outputs_ref.logits[0, 0], dim=0)
+                logp_ref = logprobs_ref[ref_id]
+
+            results[i] = (logp_alt - logp_ref).item()
+
+        return results
+
         
     
     def run_vep_eval(self, model, step_id):

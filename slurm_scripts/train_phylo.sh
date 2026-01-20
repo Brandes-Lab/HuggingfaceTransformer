@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=train_modernBERT_34M_phylo_lr_6e-4_bs_4096
-#SBATCH --partition=a100_long
+#SBATCH --job-name=train_t5_34M_phylo_lr_1e-3_bs_256
+#SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
-#SBATCH --time=28-00:00:00
+#SBATCH --time=03-00:00:00
 #SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
 #SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
@@ -113,6 +113,38 @@ export MASTER_PORT=$((29500 + RANDOM % 1000))
 #   --save_strategy "no" 
 
 
+# torchrun \
+#   --nnodes=1 \
+#   --nproc-per-node=1 \
+#   --master_addr=${MASTER_ADDR} \
+#   --master_port=${MASTER_PORT} \
+#   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
+#   --rdzv_backend=c10d \
+#   python_scripts/train_modernBERT.py \
+#   --run-name modernBERT_34M_phylo_lr_6e-4_bs_4096 \
+#   --training_type "phylo" \
+#   --wandb_project "phylo-llm" \
+#   --tokenizer-path ./phylo_char_tokenizer_updated \
+#   --train_dataset_type "iterable" \
+#   --train-dataset-path /gpfs/data/brandeslab/Data/uniref/uniref90_clusters.parquet \
+#   --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
+#   --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
+#   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+#   --output-dir /gpfs/data/brandeslab/model_checkpts \
+#   --max-steps 3_000_000 \
+#   --logging_steps 16 \
+#   --batch_sampler "phylo_default" \
+#   --per_device_train_batch_size 128 \
+#   --gradient_accumulation_steps 32 \
+#   --learning_rate 6e-4 \
+#   --vep_eval_steps 2000 \
+#   --dataloader_num_workers 32 \
+#   --dataloader_persistent_workers True \
+#   --dataloader_prefetch_factor 16 \
+#   --eval_strategy "no" \
+#   --save_strategy "no" 
+
+
 torchrun \
   --nnodes=1 \
   --nproc-per-node=1 \
@@ -121,8 +153,8 @@ torchrun \
   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
   --rdzv_backend=c10d \
   python_scripts/train_modernBERT.py \
-  --run-name modernBERT_34M_phylo_lr_6e-4_bs_4096 \
-  --training_type "phylo" \
+  --run-name t5_34M_phylo_lr_1e-3_bs_256 \
+  --training_type "phylo_encoder_decoder" \
   --wandb_project "phylo-llm" \
   --tokenizer-path ./phylo_char_tokenizer_updated \
   --train_dataset_type "iterable" \
@@ -132,12 +164,12 @@ torchrun \
   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
   --output-dir /gpfs/data/brandeslab/model_checkpts \
   --max-steps 3_000_000 \
-  --logging_steps 16 \
+  --logging_steps 32 \
   --batch_sampler "phylo_default" \
-  --per_device_train_batch_size 128 \
+  --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 32 \
-  --learning_rate 6e-4 \
-  --vep_eval_steps 1000 \
+  --learning_rate 1e-3 \
+  --vep_eval_steps 10000 \
   --dataloader_num_workers 32 \
   --dataloader_persistent_workers True \
   --dataloader_prefetch_factor 16 \
