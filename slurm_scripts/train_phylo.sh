@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=train_t5_34M_phylo_lr_1e-3_bs_256
-#SBATCH --partition=a100_short
+#SBATCH --partition=a100_long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
 #SBATCH --time=03-00:00:00
-#SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
-#SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
+#SBATCH --output=phylo-training-%j.out
+#SBATCH --error=phylo-training-%j.err
 
 
 # === Load and activate conda environment ===
@@ -52,7 +52,10 @@ export WANDB_API_KEY=ae9049d442db2ba3fa77f7928c1dae68353b3762
 export TOKENIZERS_PARALLELISM=false
 
 # === Change to project directory ===
-cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
+cd /gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer/
+
+# === Ensure local gLM package is used (prepend to PYTHONPATH) ===
+export PYTHONPATH="/gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer:$PYTHONPATH"
 
 # === Use a random master port for torch distributed ===
 export MASTER_PORT=$((29500 + RANDOM % 1000))
@@ -145,7 +148,7 @@ export MASTER_PORT=$((29500 + RANDOM % 1000))
 #   --save_strategy "no" 
 
 
-torchrun \
+time torchrun \
   --nnodes=1 \
   --nproc-per-node=1 \
   --master_addr=${MASTER_ADDR} \
@@ -158,7 +161,7 @@ torchrun \
   --wandb_project "phylo-llm" \
   --tokenizer-path ./phylo_char_tokenizer_updated \
   --train_dataset_type "iterable" \
-  --train-dataset-path /gpfs/data/brandeslab/Data/uniref/uniref90_clusters.parquet \
+  --train_dataset_path /gpfs/data/brandeslab/Data/uniref/hf_pairs_uniref90_final/train.jsonl \
   --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
   --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \

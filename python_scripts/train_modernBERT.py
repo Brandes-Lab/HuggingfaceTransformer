@@ -26,7 +26,7 @@ from gLM.models import ProteinT5Model
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, SequencePairCollator
-from gLM.dataset import UniRefClusterIterableDataset
+from gLM.dataset import SeqPairIterableDataset
 from gLM.train_utils import PhyloTrainer
 
 if torch.cuda.is_available():
@@ -312,15 +312,13 @@ def main():
     elif data_args.train_dataset_type == "iterable":
         print(f"using iterable dataset")
 
-        train_ds = UniRefClusterIterableDataset(
-                parquet_path=data_args.train_dataset_path,
-                index_db_path=data_args.index_db_path,
-                fasta_path=data_args.fasta_path, 
+        train_ds = SeqPairIterableDataset(
+                dataset_path=data_args.train_dataset_path,
                 tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
                 max_seq_len=model_args.max_position_embeddings,
                 training_type=training_args.training_type,
                 batch_size=training_args.per_device_train_batch_size
-            )
+        )
         val_ds = None  # No eval dataset for iterable dataset
 
     if training_args.training_type == "MLM":
