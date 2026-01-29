@@ -1,31 +1,28 @@
 # type: ignore
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field  # type: ignore
+from typing import Literal
 
-import numpy as np
-import torch 
-import pandas as pd
-import matplotlib.pyplot as plt
+import torch  # type: ignore
 from datasets import load_from_disk
 from transformers import (
+    DataCollatorForLanguageModeling,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
-    DataCollatorForLanguageModeling,
     ModernBertForMaskedLM
 )
 
 import wandb
 from gLM.callbacks import (
     ElapsedTimeLoggerCallback,
-    ZeroShotVEPEvaluationCallback,
     LossPrintCallback,
+    ZeroShotVEPEvaluationCallback,
 )
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.tokenizers import TokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
-
 
 if torch.cuda.is_available():
     print("Using CUDA")
@@ -43,6 +40,7 @@ def print_rank0(*args, **kwargs):
         print(*args, **kwargs)
 
 
+
 @dataclass
 class ModelArguments:
     """Arguments for model configuration."""
@@ -53,7 +51,10 @@ class ModelArguments:
     max_position_embeddings: int = field(
         default=8192, metadata={"help": "Maximum sequence length for the model"}
     )
-
+    attn_implementation: Literal["flash_attention_2", "sdpa"] = field(
+        default="flash_attention_2",
+        metadata={"help": "Attention implementation to use"},
+    )
 
 @dataclass
 class DataArguments:
@@ -116,11 +117,16 @@ class CustomTrainingArguments(TrainingArguments):
     mlm_probability: float = field(
         default=0.15, metadata={"help": "Probability for masking tokens in MLM"}
     )
-    dynamic_batching: bool = field(
-        default=False, metadata={"help": "Whether to use dynamic batching"}
+
+    batch_sampler: Literal["default", "length_adaptive", "token_budget"] = field(
+        default="default", metadata={"help": "Batch sampler to use"}
     )
     max_tokens_per_batch: int = field(
         default=50_000, metadata={"help": "Maximum number of tokens per batch"}
+    )
+    shuffle_batches: bool = field(
+        default=True,
+        metadata={"help": "Whether to shuffle batches after bucketing by length"},
     )
 
     # Path to the pre-trained modernBERT checkpoint
@@ -141,11 +147,12 @@ class CustomTrainingArguments(TrainingArguments):
     # eval_steps: int = field(default=50000)
     logging_strategy: str = field(default="steps")
     save_strategy: str = field(default="steps")
-    save_steps: int= field(default=10000)
+    save_steps: int = field(default=1_000_000)
     report_to: str = field(default="wandb")
     remove_unused_columns: bool = field(default=False)
-    group_by_length: bool = field(default=True)
+    group_by_length: bool = field(default=False)
     length_column_name: str = field(default="length")
+    include_num_input_tokens_seen: str = field(default="non_padding")
 
     base_batch_size: int = field(default=8, metadata={"help": "Base batch size for dynamic batching"})
 
@@ -226,20 +233,15 @@ def main():
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
+    
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=training_args.mlm_probability,
     )
 
-    if training_args.dynamic_batching:
-        # data_collator = TruncatingDataCollatorForMLM(
-        #     tokenizer=tokenizer,
-        #     mlm=True,
-        #     mlm_probability=training_args.mlm_probability,
-        #     max_length=training_args.max_tokens_per_batch,
-        # )
-        print(f"using CustomBatchSizeTrainer")
+    if training_args.batch_sampler != "default":
+        print("using CustomBatchSizeTrainer")
         trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
@@ -268,9 +270,9 @@ def main():
     )
     trainer.add_callback(ElapsedTimeLoggerCallback())
     trainer.add_callback(LossPrintCallback())
-
     trainer.train()
 
 
 if __name__ == "__main__":
     main()
+

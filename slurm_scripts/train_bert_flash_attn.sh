@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=modernBERT1B_flash_attn_train_100k_tok_budget
+#SBATCH --job-name=pre_trained_modernBERT1B_seq_packing
 #SBATCH --partition=a100_short
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:a100:1
@@ -65,11 +65,12 @@ torchrun \
     --master_port=${MASTER_PORT} \
     --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
     --rdzv_backend=c10d \
-    python_scripts/train_modernBERT.py \
-    --run-name modernBERT_1B_flashattn_100k_tok_budget \
+    python_scripts/train_pre_trained_modernBERT.py \
+    --run-name pre_trained_modernBERT_1B_100k_tok_budget \
     --tokenizer-path ./char_tokenizer \
     --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
+    --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_1B_2/checkpoint-46500 \
     --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
     --vep_eval_steps 1500 \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
@@ -83,5 +84,5 @@ torchrun \
     --dataloader_persistent_workers True \
     --dataloader_prefetch_factor 32 \
     --eval_strategy "no" \
-    --save_steps 2_000_000
+    --save_strategy "no"
     
