@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_t5_34M_phylo_lr_1e-3_bs_256
+#SBATCH --job-name=t5_small_phylo_lr_1e-3_bs_128
 #SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
@@ -153,7 +153,8 @@ torchrun \
   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
   --rdzv_backend=c10d \
   python_scripts/train_modernBERT.py \
-  --run-name t5_34M_phylo_lr_1e-3_bs_256 \
+  --run-name t5_small_phylo_lr_1e-3_bs_128 \
+  --model_type "T5" \
   --training_type "phylo_encoder_decoder" \
   --wandb_project "phylo-llm" \
   --tokenizer-path ./phylo_char_tokenizer_updated \
@@ -166,8 +167,8 @@ torchrun \
   --max-steps 3_000_000 \
   --logging_steps 32 \
   --batch_sampler "phylo_default" \
-  --per_device_train_batch_size 8 \
-  --gradient_accumulation_steps 32 \
+  --per_device_train_batch_size 16 \
+  --gradient_accumulation_steps 8 \
   --learning_rate 1e-3 \
   --vep_eval_steps 10000 \
   --dataloader_num_workers 32 \

@@ -10,6 +10,7 @@ from transformers import (
     HfArgumentParser,
     Trainer,
     TrainingArguments,
+    Adafactor
 )
 
 import wandb
@@ -260,6 +261,8 @@ def main():
             vocab_size=tokenizer.vocab_size, 
             tokenizer=tokenizer
         ).build()
+        model.config.decoder_start_token_id = tokenizer.pad_token_id
+        print("decoder_start_token_id =", model.config.decoder_start_token_id)
         model.gradient_checkpointing_enable()
         model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
