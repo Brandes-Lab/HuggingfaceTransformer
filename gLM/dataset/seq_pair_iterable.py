@@ -103,7 +103,10 @@ class SeqPairIterableDataset(IterableDataset):
                 # Only s1 used
                 raw_seqs: List[str] = []
                 while len(raw_seqs) < self.batch_size:
-                    s1, _ = next(stream)  # may raise StopIteration; handled below
+                    try:
+                        s1, _ = next(stream)
+                    except StopIteration:
+                        return  # Properly end the generator when data is exhausted
                     raw_seqs.append(s1[: self.max_seq_len])
 
                 tokenized = self.tokenizer(
@@ -124,7 +127,10 @@ class SeqPairIterableDataset(IterableDataset):
                 pids: List[float] = []
 
                 while len(aligned_pairs) < self.batch_size:
-                    s1, s2 = next(stream)
+                    try:
+                        s1, s2 = next(stream)
+                    except StopIteration:
+                        return  # Properly end the generator when data is exhausted
                     a1, a2 = align_pair(s1, s2)
                     if len(a1) != len(a2):
                         continue
@@ -146,7 +152,10 @@ class SeqPairIterableDataset(IterableDataset):
                 targets: List[str] = []
 
                 while len(inputs) < self.batch_size:
-                    s1, s2 = next(stream)
+                    try:
+                        s1, s2 = next(stream)
+                    except StopIteration:
+                        return  # Properly end the generator when data is exhausted
                     inputs.append(s1[: self.max_seq_len])
                     targets.append(s2[: self.max_seq_len])
 
