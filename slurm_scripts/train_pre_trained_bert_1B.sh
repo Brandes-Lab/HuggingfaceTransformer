@@ -9,8 +9,8 @@
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=0
 #SBATCH --time=13-00:00:00
-#SBATCH --output=/gpfs/scratch/an4477/slurm_logs/%x_%j.out
-#SBATCH --error=/gpfs/scratch/an4477/slurm_logs/%x_%j.err
+#SBATCH --output=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.out
+#SBATCH --error=/gpfs/data/brandeslab/Project/slurm_logs/%x_%j.err
 
 
 # === Load and activate conda environment ===
