@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=train_t5_34M_phylo_lr_1e-3_bs_256
-#SBATCH --partition=a100_long
+#SBATCH --job-name=t5_base_phylo_lr_1e-3_bs_128_no_shuffle
+#SBATCH --partition=a100_short
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
@@ -52,10 +52,11 @@ export WANDB_API_KEY=ae9049d442db2ba3fa77f7928c1dae68353b3762
 export TOKENIZERS_PARALLELISM=false
 
 # === Change to project directory ===
-cd /gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer/
+# cd /gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer/
+cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
 # === Ensure local gLM package is used (prepend to PYTHONPATH) ===
-export PYTHONPATH="/gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer:$PYTHONPATH"
+# export PYTHONPATH="/gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer:$PYTHONPATH"
 
 # === Use a random master port for torch distributed ===
 export MASTER_PORT=$((29500 + RANDOM % 1000))
@@ -156,25 +157,27 @@ time torchrun \
   --rdzv_endpoint=${head_node_ip}:${MASTER_PORT} \
   --rdzv_backend=c10d \
   python_scripts/train_modernBERT.py \
-  --run-name t5_34M_phylo_lr_1e-3_bs_256 \
+  --run-name t5_base_phylo_lr_1e-3_bs_128_no_shuffle \
+  --model_type "T5" \
   --training_type "phylo_encoder_decoder" \
   --wandb_project "phylo-llm" \
   --tokenizer-path ./phylo_char_tokenizer_updated \
   --train_dataset_type "iterable" \
+  --max_position_embeddings 512 \
   --train_dataset_path /gpfs/data/brandeslab/Data/uniref/hf_pairs_uniref90_final/train.jsonl \
   --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
   --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
   --output-dir /gpfs/data/brandeslab/model_checkpts \
-  --max-steps 3_000_000 \
-  --logging_steps 32 \
+  --max_steps 10_000_000 \
+  --logging_steps 16 \
   --batch_sampler "phylo_default" \
   --per_device_train_batch_size 8 \
-  --gradient_accumulation_steps 32 \
+  --gradient_accumulation_steps 16 \
   --learning_rate 1e-3 \
-  --vep_eval_steps 10000 \
-  --dataloader_num_workers 32 \
+  --vep_eval_steps 15000 \
+  --dataloader_num_workers 16 \
   --dataloader_persistent_workers True \
-  --dataloader_prefetch_factor 16 \
+  --dataloader_prefetch_factor 8 \
   --eval_strategy "no" \
   --save_strategy "no" 

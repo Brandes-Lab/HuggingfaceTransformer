@@ -23,6 +23,7 @@ from gLM.callbacks import (
 from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.models import ProteinT5Model
+from gLM.models import ProteinBARTModel
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, SequencePairCollator
@@ -48,7 +49,7 @@ def print_rank0(*args, **kwargs):
 @dataclass
 class ModelArguments:
     """Arguments for model configuration."""
-    model_type: Literal["ModernBERT", "T5"] = field(
+    model_type: Literal["ModernBERT", "T5", "BART"] = field(
         default="ModernBERT", metadata={"help": "Type of model to use"}
     )
 
@@ -74,7 +75,10 @@ class CustomTrainingArguments(TrainingArguments):
         metadata={"help": "Directory to save model checkpoints"},
     )
     max_steps: int = field(
-        default=3_000_000, metadata={"help": "Maximum number of training steps"}
+        default=-1, metadata={"help": "Maximum number of training steps"}
+    )
+    num_train_epochs: int = field(
+        default=3, metadata={"help": "Number of train epochs"}
     )
     per_device_train_batch_size: int = field(
         default=1, metadata={"help": "Training batch size per device"}
@@ -260,6 +264,21 @@ def main():
             vocab_size=tokenizer.vocab_size, 
             tokenizer=tokenizer
         ).build()
+        model.config.decoder_start_token_id = tokenizer.pad_token_id
+        print("decoder_start_token_id =", model.config.decoder_start_token_id)
+        model.gradient_checkpointing_enable()
+        model.to(training_args.local_rank)
+        print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+        print("Hidden size  used:", model.config.d_model)
+
+    elif model_args.model_type == "BART":
+        print("Using BART model...")
+        model = ProteinBARTModel(
+            vocab_size=tokenizer.vocab_size, 
+            tokenizer=tokenizer
+        ).build()
+        # model.config.decoder_start_token_id = tokenizer.pad_token_id
+        # print("decoder_start_token_id =", model.config.decoder_start_token_id)
         model.gradient_checkpointing_enable()
         model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
@@ -301,6 +320,7 @@ def main():
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
+    print(f"max_position_embeddings: {model_args.max_position_embeddings}")
 
     if data_args.train_dataset_type == "map":
         print(f"using pre-tokenized dataset")
