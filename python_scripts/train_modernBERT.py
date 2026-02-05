@@ -26,8 +26,8 @@ from gLM.models import ProteinBertModel
 from gLM.models import ProteinT5Model
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
-from gLM.collator import create_mlm_collator, SequencePairCollator
-from gLM.dataset import UniRefClusterIterableDataset
+from gLM.collator import create_mlm_collator, SequencePairCollator, PhyloCollator
+from gLM.dataset import UniRefClusterIterableDataset, JsonInMemoryDataset
 from gLM.train_utils import PhyloTrainer
 
 if torch.cuda.is_available():
@@ -315,15 +315,17 @@ def main():
     elif data_args.train_dataset_type == "iterable":
         print(f"using iterable dataset")
 
-        train_ds = UniRefClusterIterableDataset(
-                parquet_path=data_args.train_dataset_path,
-                index_db_path=data_args.index_db_path,
-                fasta_path=data_args.fasta_path, 
-                tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
-                max_seq_len=model_args.max_position_embeddings,
-                training_type=training_args.training_type,
-                batch_size=training_args.per_device_train_batch_size
-            )
+        # train_ds = UniRefClusterIterableDataset(
+        #         parquet_path=data_args.train_dataset_path,
+        #         index_db_path=data_args.index_db_path,
+        #         fasta_path=data_args.fasta_path, 
+        #         tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
+        #         max_seq_len=model_args.max_position_embeddings,
+        #         training_type=training_args.training_type,
+        #         batch_size=training_args.per_device_train_batch_size
+        #     )
+
+        train_ds = JsonInMemoryDataset(data_args.train_dataset_path)
         val_ds = None  # No eval dataset for iterable dataset
 
     if training_args.training_type == "MLM":
@@ -333,20 +335,21 @@ def main():
             tokenizer,
             mlm_probability=training_args.mlm_probability
         )
-    # elif training_args.training_type == "phylo":
-    #     print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
-    #     data_collator = SequencePairCollator(
-    #         pad_id = tokenizer.pad_token_id,
-    #     )
 
     elif training_args.training_type in ["phylo_encoder_only", "phylo_encoder_decoder"]:
-        print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
-        data_collator = SequencePairCollator(
+        # print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
+        # data_collator = SequencePairCollator(
+        #         tokenizer=tokenizer,
+        #         training_type=training_args.training_type,
+        #         padding=True,
+        #         return_tensors="pt",
+        #         label_pad_token_id=-100
+        #     )
+        print(f"Using PhyloCollator for training type: {training_args.training_type}")
+        data_collator = PhyloCollator(
                 tokenizer=tokenizer,
                 training_type=training_args.training_type,
-                padding=True,
-                return_tensors="pt",
-                label_pad_token_id=-100
+                max_seq_len=model_args.max_position_embeddings
             )
 
     if training_args.batch_sampler == "phylo_default":

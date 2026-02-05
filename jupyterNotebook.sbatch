@@ -1,10 +1,11 @@
 #!/bin/bash
 
-#SBATCH --job-name=jupyterCPU
-#SBATCH --partition=a100_dev
+#SBATCH --job-name=jupyterGPU
+#SBATCH --partition=a100_short
 #SBATCH --nodes=1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
-#SBATCH --time=04:00:00
+#SBATCH --time=03-00:00:00
 #SBATCH --mem=50G
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-user=sinha.anushka12@gmail.com
