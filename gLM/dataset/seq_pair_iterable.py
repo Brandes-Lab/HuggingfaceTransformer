@@ -16,21 +16,19 @@ class SeqPairIterableDataset(IterableDataset):
 
     Behavior preserved:
       - training_type == "MLM":
-          uses ONLY s1 (seq1), returns one item per sequence
+          return  single raw sequence string (randomly s1 or s2)
       - training_type == "phylo_encoder_only":
-          aligns s1/s2, returns tokenizer.batch_encode_aligned(...) items + percent_identity
+          aligns each pair
+          returns single (a1, a2, pid) tuple
       - else (e.g. "phylo_encoder_decoder"):
-          returns {"input_ids","attention_mask","labels"} using s1 as input and s2 as target
-    """
+        returns single input-target pair (s1, s2)
+\    """
 
-    def __init__(self, dataset_path: str, tokenizer, max_seq_len: int, training_type: str, batch_size: int,
-                 shuffle_buffer: int = 0):
+    def __init__(self, dataset_path: str, tokenizer, training_type: str, shuffle_buffer: int = 0):
         super().__init__()
         self.dataset_path = dataset_path
         self.tokenizer = tokenizer
-        self.max_seq_len = max_seq_len
         self.training_type = training_type
-        self.batch_size = batch_size
         self.shuffle_buffer = shuffle_buffer  # 0 disables; >0 enables light streaming shuffle per worker
 
     def _line_iterator(self) -> Iterator[str]:
@@ -96,171 +94,87 @@ class SeqPairIterableDataset(IterableDataset):
                     yield s1, s2
 
     def __iter__(self):
-
-        while True:  # infinite dataset
-
+        while True:
             stream = self._stream_examples()
 
-            try:
-
-                while True:
-
-                    if self.training_type == "MLM":
-
-                        raw_seqs = []
-
-                        while len(raw_seqs) < self.batch_size:
-                            s1, _ = next(stream)
-                            raw_seqs.append(s1[: self.max_seq_len])
-
-                        tokenized = self.tokenizer(
-                            raw_seqs,
-                            padding="longest",
-                            truncation=True,
-                            max_length=self.max_seq_len,
-                            return_tensors="pt",
-                        )
-
-                        for i in range(self.batch_size):
-                            yield {k: v[i] for k, v in tokenized.items()}
-
-                    elif self.training_type == "phylo_encoder_only":
-
-                        aligned_pairs = []
-                        pids = []
-
-                        while len(aligned_pairs) < self.batch_size:
-                            s1, s2 = next(stream)
-
-                            a1, a2 = align_pair(s1, s2)
-                            if len(a1) != len(a2):
-                                continue
-
-                            aligned_pairs.append((a1, a2))
-                            pids.append(percent_identity(a1, a2))
-
-                        encoded_batch = self.tokenizer.batch_encode_aligned(
-                            aligned_pairs,
-                            max_length=self.max_seq_len,
-                        )
-
-                        for enc, pid in zip(encoded_batch, pids):
-                            enc["percent_identity"] = pid
-                            yield enc
-
+            for s1, s2 in stream:
+                if self.training_type == "MLM": # yield single raw sequence
+                    # pick s1 or s2 randomly
+                    # s1, s2 = next(stream)
+                    if random.random() < 0.5:
+                        yield s1 
                     else:
+                        yield s2
+                elif self.training_type == "phylo_encoder_only":
+                    # align and yield
+                    # s1, s2 = next(stream)
+                    a1, a2 = align_pair(s1, s2)
+                    if len(a1) != len(a2):
+                        continue
+                    pid = percent_identity(a1, a2)
+                    yield (a1, a2, pid) # yield aligned pair and pid
 
-                        inputs = []
-                        targets = []
+                elif self.training_type == "phylo_encoder_decoder":
+                    # s1, s2 = next(stream)
+                    # print(len(s1), len(s2))
+                    yield (s1, s2) # yield input-target pair
 
-                        while len(inputs) < self.batch_size:
-                            s1, s2 = next(stream)
-                            inputs.append(s1[: self.max_seq_len])
-                            targets.append(s2[: self.max_seq_len])
 
-                        enc = self.tokenizer(
-                            inputs,
-                            padding="longest",
-                            truncation=True,
-                            max_length=self.max_seq_len,
-                            return_tensors="pt",
-                        )
 
-                        dec = self.tokenizer(
-                            targets,
-                            padding="longest",
-                            truncation=True,
-                            max_length=self.max_seq_len,
-                            return_tensors="pt",
-                        )
 
-                        for i in range(self.batch_size):
-                            yield {
-                                "input_ids": enc["input_ids"][i],
-                                "attention_mask": enc["attention_mask"][i],
-                                "labels": dec["input_ids"][i],
-                            }
 
-            except StopIteration:
-                # file ended → restart automatically
-                continue
-
-    
-    
     # def __iter__(self):
-    #     while True: # infinite dataset
+
+    #     while True:  # infinite dataset
+
     #         stream = self._stream_examples()
 
-    #     while True:
-    #         if self.training_type == "MLM":
-    #             # Only s1 used
-    #             raw_seqs: List[str] = []
-    #             while len(raw_seqs) < self.batch_size:
-    #                 s1, _ = next(stream)  # may raise StopIteration; handled below
-    #                 raw_seqs.append(s1[: self.max_seq_len])
+    #         try:
 
-    #             tokenized = self.tokenizer(
-    #                 raw_seqs,
-    #                 padding="longest",
-    #                 truncation=True,
-    #                 max_length=self.max_seq_len,
-    #                 return_tensors="pt",
-    #             )
+    #             while True:
 
-    #             # yield one item at a time (same as your current logic)
-    #             # (views into the batch tensors; cheap)
-    #             for i in range(self.batch_size):
-    #                 yield {k: v[i] for k, v in tokenized.items()}
+    #                 if self.training_type == "MLM":
 
-    #         elif self.training_type == "phylo_encoder_only":
-    #             aligned_pairs: List[Tuple[str, str]] = []
-    #             pids: List[float] = []
+    #                     raw_seqs = []
 
-    #             while len(aligned_pairs) < self.batch_size:
-    #                 s1, s2 = next(stream)
-    #                 a1, a2 = align_pair(s1, s2)
-    #                 if len(a1) != len(a2):
-    #                     continue
-    #                 aligned_pairs.append((a1, a2))
-    #                 pids.append(percent_identity(a1, a2))
+    #                     while len(raw_seqs) < self.batch_size:
+    #                         s1, _ = next(stream)
+    #                         raw_seqs.append(s1)
 
-    #             encoded_batch = self.tokenizer.batch_encode_aligned(
-    #                 aligned_pairs,
-    #                 max_length=self.max_seq_len,
-    #             )
+    #                     return raw_seqs # list of s1 strings
 
-    #             for enc, pid in zip(encoded_batch, pids):
-    #                 enc["percent_identity"] = pid
-    #                 yield enc
+    #                 elif self.training_type == "phylo_encoder_only":
 
-    #         else:
-    #             # Encoder-decoder style: s1 input, s2 target
-    #             inputs: List[str] = []
-    #             targets: List[str] = []
+    #                     aligned_pairs = []
+    #                     pids = []
 
-    #             while len(inputs) < self.batch_size:
-    #                 s1, s2 = next(stream)
-    #                 inputs.append(s1[: self.max_seq_len])
-    #                 targets.append(s2[: self.max_seq_len])
+    #                     while len(aligned_pairs) < self.batch_size:
+    #                         # get the next sequence pair
+    #                         s1, s2 = next(stream)
+    #                         # align them
+    #                         a1, a2  = align_pair(s1, s2)
+    #                         # skip if lengths don't match (shouldn't happen)
+    #                         if len(a1) != len(a2):
+    #                             continue
 
-    #             enc = self.tokenizer(
-    #                 inputs,
-    #                 padding="longest",
-    #                 truncation=True,
-    #                 max_length=self.max_seq_len,
-    #                 return_tensors="pt",
-    #             )
-    #             dec = self.tokenizer(
-    #                 targets,
-    #                 padding="longest",
-    #                 truncation=True,
-    #                 max_length=self.max_seq_len,
-    #                 return_tensors="pt",
-    #             )
+    #                         aligned_pairs.append((a1, a2))
+    #                         pids.append(percent_identity(a1, a2))
 
-    #             for i in range(self.batch_size):
-    #                 yield {
-    #                     "input_ids": enc["input_ids"][i],
-    #                     "attention_mask": enc["attention_mask"][i],
-    #                     "labels": dec["input_ids"][i],
-    #                 }
+    #                     return aligned_pairs, pids # list of (a1,a2), list of pids
+
+    #                 else:
+
+    #                     inputs = []
+    #                     targets = []
+
+    #                     while len(inputs) < self.batch_size:
+    #                         s1, s2 = next(stream)
+    #                         inputs.append(s1)
+    #                         targets.append(s2)
+
+    #                     return inputs, targets # list of s1 strings, list of s2 strings
+
+    #         except StopIteration:
+    #             # file ended → restart automatically
+    #             continue
+

@@ -26,7 +26,7 @@ from gLM.models import ProteinT5Model
 from gLM.models import ProteinBARTModel
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
-from gLM.collator import create_mlm_collator, SequencePairCollator
+from gLM.collator import create_mlm_collator, PhyloCollator
 from gLM.dataset import SeqPairIterableDataset
 from gLM.train_utils import PhyloTrainer
 
@@ -221,18 +221,6 @@ def main():
         wandb.init(mode="disabled")
 
     # Load tokenizer
-    # if training_args.training_type == "MLM":
-    #     tokenizer = TokenizerLoader(model_args.tokenizer_path).load()
-    #     pad_id = tokenizer.pad_token_id
-    #     gap_id = None
-    #     print("MLM Tokenizer loaded.")
-
-    # elif training_args.training_type == "phylo":
-    #     tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path).load()
-    #     pad_id = tokenizer.pad_token_id
-    #     gap_id = tokenizer.convert_tokens_to_ids("-")
-    #     print("Phylo Tokenizer loaded. GAP ID:", gap_id)
-
     tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path)
     print(f"Using tokenizer from: {model_args.tokenizer_path}")
     pad_id = tokenizer.pad_token_id
@@ -271,52 +259,6 @@ def main():
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
         print("Hidden size  used:", model.config.d_model)
 
-    elif model_args.model_type == "BART":
-        print("Using BART model...")
-        model = ProteinBARTModel(
-            vocab_size=tokenizer.vocab_size, 
-            tokenizer=tokenizer
-        ).build()
-        # model.config.decoder_start_token_id = tokenizer.pad_token_id
-        # print("decoder_start_token_id =", model.config.decoder_start_token_id)
-        model.gradient_checkpointing_enable()
-        model.to(training_args.local_rank)
-        print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-        print("Hidden size  used:", model.config.d_model)
-
-    # Load datasets
-    # if training_args.training_type == "MLM":
-    #     train_ds = load_from_disk(data_args.train_dataset_path)
-    #     # train_ds = train_ds.select(range(500))  # for testing
-    #     val_ds = load_from_disk(data_args.val_dataset_path)
-    #     val_ds = val_ds.shuffle(seed=42)
-        
-    #     # Select first 500k after shuffling
-    #     val_subset = val_ds.select(range(500_000))
-
-    #     # Use MLM collator
-    #     data_collator = create_mlm_collator(
-    #     tokenizer,
-    #     mlm_probability=training_args.mlm_probability
-    #     )
-    # elif training_args.training_type == "phylo":
-    #     train_ds = UniRefClusterIterableDataset(
-    #         parquet_path=data_args.train_dataset_path,
-    #         index_db_path=data_args.index_db_path,
-    #         fasta_path=data_args.fasta_path, 
-    #         tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
-    #         max_seq_len=model_args.max_position_embeddings,
-    #     )
-    #     val_ds = None
-    #     data_collator = SequencePairCollator(
-    #         pad_id = tokenizer.pad_token_id,
-    #     )
-
-    # print("Max train length:", max(train_ds["length"]))
-    # print(f"Number of seqs of length 8192: {(np.array(train_ds['length'])==8192).sum()}")
-    # print("99th percentile:", np.percentile(train_ds["length"], 99))
-    # print("95th percentile:", np.percentile(train_ds["length"], 95))
-
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
@@ -334,10 +276,9 @@ def main():
 
         train_ds = SeqPairIterableDataset(
                 dataset_path=data_args.train_dataset_path,
-                tokenizer=PhyloTokenizerLoader(model_args.tokenizer_path),
-                max_seq_len=model_args.max_position_embeddings,
+                tokenizer=tokenizer,
                 training_type=training_args.training_type,
-                batch_size=training_args.per_device_train_batch_size
+                shuffle_buffer=100000
         )
         val_ds = None  # No eval dataset for iterable dataset
 
@@ -348,20 +289,13 @@ def main():
             tokenizer,
             mlm_probability=training_args.mlm_probability
         )
-    # elif training_args.training_type == "phylo":
-    #     print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
-    #     data_collator = SequencePairCollator(
-    #         pad_id = tokenizer.pad_token_id,
-    #     )
 
     elif training_args.training_type in ["phylo_encoder_only", "phylo_encoder_decoder"]:
         print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
-        data_collator = SequencePairCollator(
+        data_collator = PhyloCollator(
                 tokenizer=tokenizer,
                 training_type=training_args.training_type,
-                padding=True,
-                return_tensors="pt",
-                label_pad_token_id=-100
+                max_seq_len=model_args.max_position_embeddings
             )
 
     if training_args.batch_sampler == "phylo_default":
@@ -399,17 +333,17 @@ def main():
     if training_args.training_type == "phylo_encoder_only":
         trainer.add_callback(PercentIdentityLoggingCallback())
 
-    trainer.add_callback(
-        ZeroShotVEPEvaluationCallback(
-            tokenizer=tokenizer,
-            input_csv=data_args.vep_input_csv,
-            trainer=trainer,
-            max_len=model_args.max_position_embeddings,
-            batch_size=8,
-            eval_every_n_steps=training_args.vep_eval_steps,
-            training_type=training_args.training_type, 
-        )
-    )
+    # trainer.add_callback(
+    #     ZeroShotVEPEvaluationCallback(
+    #         tokenizer=tokenizer,
+    #         input_csv=data_args.vep_input_csv,
+    #         trainer=trainer,
+    #         max_len=model_args.max_position_embeddings,
+    #         batch_size=8,
+    #         eval_every_n_steps=training_args.vep_eval_steps,
+    #         training_type=training_args.training_type, 
+    #     )
+    # )
 
     trainer.add_callback(ElapsedTimeLoggerCallback())
     # trainer.add_callback(LossPrintCallback())

@@ -4,33 +4,27 @@ from torch.utils.data import DataLoader, get_worker_info
 import wandb
 import torch
 
-# class PhyloTrainer(Trainer):
-#     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-
-#         # Standard HF loss
-#         loss = super().compute_loss(model, inputs, return_outputs=False)
-
-#         # Log percent identity
-#         pid = inputs.get("percent_identity", None)
-#         if pid is not None:
-#             avg_pid = pid.float().mean().item()
-#             wandb.log({"percent_identity": avg_pid}, step=self.state.global_step)
-
-#         return loss
-
-
-
 
 class PhyloTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         # Standard HF loss
         loss = super().compute_loss(model, inputs, return_outputs=False)
+        
+        if loss.item() > 3.1:
+            print("printing from trainer")
+            print("High loss at step", self.state.global_step)
+            print("input_ids.shape:", inputs["input_ids"].shape)
+            print("labels.shape:", inputs["labels"].shape)
+            print("-100 count per sample:", (inputs["labels"] == -100).sum(dim=1))
+            # print("input_ids padding count per sample:", (inputs["input_ids"] == self.tokenizer.pad_token_id).sum(dim=1))
+            print("-" * 50)
 
         # Log percent identity
         pid = inputs.get("percent_identity", None)
         if pid is not None:
             avg_pid = pid.float().mean().item()
             wandb.log({"percent_identity": avg_pid}, step=self.state.global_step)
+    
 
         return loss
 
@@ -44,7 +38,7 @@ class PhyloTrainer(Trainer):
 
         return DataLoader(
             self.train_dataset,
-            batch_size=self.args.per_device_train_batch_size,
+            batch_size=self.args.train_batch_size,
             collate_fn=self.data_collator,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=True,
