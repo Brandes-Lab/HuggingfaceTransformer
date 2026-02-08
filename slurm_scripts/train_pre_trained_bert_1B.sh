@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=train_pre_trained_modernBERT_1B_3
+#SBATCH --job-name=train_pre_trained_modernBERT_1B_4
 #SBATCH --partition=reservation
 #SBATCH --reservation=brandeslab_reservation
 #SBATCH --nodelist=a100nv-4005,a100nv-4006,a100nv-4007
@@ -81,11 +81,11 @@ srun --kill-on-bad-exit=1 torchrun \
     --rdzv_backend=c10d \
     --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
     python_scripts/train_pre_trained_modernBERT.py \
-    --run-name pre_trained_modernBERT_1B_3 \
+    --run-name pre_trained_modernBERT_1B_4 \
     --tokenizer-path ./char_tokenizer \
     --train-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/train_only/train \
     --val-dataset-path /gpfs/data/brandeslab/Data/processed_datasets/uniref90_tokenized_8192/val_only/validation \
-    --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_1B_2/checkpoint-46500 \
+    --ckpt_path /gpfs/data/brandeslab/model_checkpts/pre_trained_modernBERT_1B_3/checkpoint-228000 \
     --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
     --vep_eval_steps 24000 \
     --output-dir /gpfs/data/brandeslab/model_checkpts \
