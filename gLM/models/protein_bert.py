@@ -14,11 +14,11 @@ class ProteinBertModel:
     def build(self):
         config = ModernBertConfig(
             vocab_size=self.vocab_size,
-            max_position_embeddings=8192,
-            num_hidden_layers=8,
-            num_attention_heads=8,
-            hidden_size=512,
-            intermediate_size=2048,
+            max_position_embeddings=4096,
+            num_hidden_layers=12,
+            num_attention_heads=12,
+            hidden_size=768,
+            intermediate_size=3072,
             type_vocab_size=1,
             hidden_activation="gelu",
             global_attn_every_n_layers=3,

@@ -24,21 +24,23 @@ from gLM.data_utils import TruncatingDataCollatorForMLM
 from gLM.models import ProteinBertModel
 from gLM.models import ProteinT5Model
 from gLM.models import ProteinBARTModel
+from gLM.models import ProteinT5GemmaModel
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, PhyloCollator
 from gLM.dataset import SeqPairIterableDataset
 from gLM.train_utils import PhyloTrainer
 
+# Define device globally
 if torch.cuda.is_available():
-    print("Using CUDA")
-    DEVICE = torch.device("cuda")
+    DEVICE = torch.device(f"cuda:{int(os.environ.get('LOCAL_RANK', 0))}")
+    print(f"✅ CUDA available, using device: {DEVICE}")
 elif torch.backends.mps.is_available():
-    print("Using MPS")
     DEVICE = torch.device("mps")
+    print("✅ MPS available, using MPS")
 else:
-    print("Using CPU")
     DEVICE = torch.device("cpu")
+    print("⚠️ CUDA/MPS not available. Using CPU")
 
 
 def print_rank0(*args, **kwargs):
@@ -49,7 +51,7 @@ def print_rank0(*args, **kwargs):
 @dataclass
 class ModelArguments:
     """Arguments for model configuration."""
-    model_type: Literal["ModernBERT", "T5", "BART"] = field(
+    model_type: Literal["ModernBERT", "T5", "BART", "T5Gemma"] = field(
         default="ModernBERT", metadata={"help": "Type of model to use"}
     )
 
@@ -246,6 +248,7 @@ def main():
         model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
         print("Hidden size used:", model.config.hidden_size)
+    
     elif model_args.model_type == "T5":
         print("Using T5 model...")
         model = ProteinT5Model(
@@ -255,9 +258,32 @@ def main():
         model.config.decoder_start_token_id = tokenizer.pad_token_id
         print("decoder_start_token_id =", model.config.decoder_start_token_id)
         model.gradient_checkpointing_enable()
-        model.to(training_args.local_rank)
+        device = torch.device(f"cuda:{training_args.local_rank}" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+        print_rank0(f"Moving model to device: {device}")
+
+        # model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
         print("Hidden size  used:", model.config.d_model)
+
+    elif model_args.model_type == "T5Gemma":
+        print("Using T5Gemma model...")
+        model = ProteinT5GemmaModel(
+            vocab_size=tokenizer.vocab_size, 
+            tokenizer=tokenizer, 
+            attn_implementation=model_args.attn_implementation
+        ).build()
+        model.config.decoder_start_token_id = tokenizer.pad_token_id
+        print("decoder_start_token_id =", model.config.decoder_start_token_id)
+        model.gradient_checkpointing_enable()
+        device = torch.device(f"cuda:{training_args.local_rank}" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+        print_rank0(f"Moving model to device: {device}")
+
+        # model.to(training_args.local_rank)
+        print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+       
+
 
 
     # Update training arguments with parsed values
@@ -333,17 +359,17 @@ def main():
     if training_args.training_type == "phylo_encoder_only":
         trainer.add_callback(PercentIdentityLoggingCallback())
 
-    # trainer.add_callback(
-    #     ZeroShotVEPEvaluationCallback(
-    #         tokenizer=tokenizer,
-    #         input_csv=data_args.vep_input_csv,
-    #         trainer=trainer,
-    #         max_len=model_args.max_position_embeddings,
-    #         batch_size=8,
-    #         eval_every_n_steps=training_args.vep_eval_steps,
-    #         training_type=training_args.training_type, 
-    #     )
-    # )
+    trainer.add_callback(
+        ZeroShotVEPEvaluationCallback(
+            tokenizer=tokenizer,
+            input_csv=data_args.vep_input_csv,
+            trainer=trainer,
+            max_len=model_args.max_position_embeddings,
+            batch_size=8,
+            eval_every_n_steps=training_args.vep_eval_steps,
+            training_type=training_args.training_type, 
+        )
+    )
 
     trainer.add_callback(ElapsedTimeLoggerCallback())
     # trainer.add_callback(LossPrintCallback())

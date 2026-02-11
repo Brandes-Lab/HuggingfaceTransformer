@@ -15,9 +15,9 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         tokenizer,
         input_csv,
         trainer,
-        max_len=512,
+        max_len=4096,
         eval_every_n_steps=20000,
-        batch_size=8,
+        batch_size=2,
         training_type="phylo_encoder_decoder",
     ):
         self.tokenizer = tokenizer
@@ -155,75 +155,195 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         return results
     
     def compute_log_odds_encoder_decoder(self, model, seqs, poses, refs, alts):
-        """
-        Computes zero-shot variant effect scores for encoder-decoder models (e.g., T5).
-        For each variant:
-            log_odds = log P(alt | reference_sequence) - log P(ref | reference_sequence)
-
-        The encoder always receives the *reference sequence*.
-        The decoder is prompted with a single token (ref or alt), and we compare
-        the probabilities assigned by the model.
-
-        • One encoder forward pass per batch
-        • Two decoder passes (alt + ref)
-        """
         results = [None] * len(seqs)
         device = next(model.parameters()).device
-
-        # Step 1: Filter valid examples from the batch
         valid_data = []
+
         for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
             if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
-
                 ref_id = self.tokenizer.convert_tokens_to_ids(ref)
                 alt_id = self.tokenizer.convert_tokens_to_ids(alt)
-
                 if ref_id is None or alt_id is None:
                     continue
-
                 valid_data.append((i, seq, pos, ref_id, alt_id))
 
-        
         if not valid_data:
-            return results # all None 
+            return results
 
         indices, valid_seqs, valid_poses, ref_ids, alt_ids = zip(*valid_data)
 
-        # Step 2: Tokenize encoder input batch 
-        enc_inputs = self.tokenizer(
-            list(valid_seqs),
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.max_len,
-            return_token_type_ids=False,
-        ).to(device)
+        enc_inputs = self.tokenizer(list(valid_seqs), return_tensors="pt", padding="longest",
+                                    truncation=True, max_length=self.max_len).to(device)
+        
+        decoder_prefixes = [seq[:pos] if pos > 0 else "" for seq, pos in zip(valid_seqs, valid_poses)]
+        
+        decoder_inputs = self.tokenizer(decoder_prefixes, return_tensors="pt", padding="longest",
+                                        truncation=True, max_length=self.max_len, add_special_tokens=False).to(device)
 
-        ref_ids_tensor = torch.tensor(ref_ids, dtype=torch.long, device=device)
-        alt_ids_tensor = torch.tensor(alt_ids, dtype=torch.long, device=device)
+        batch_size = decoder_inputs.input_ids.shape[0]
+        start_tokens = torch.full((batch_size, 1), self.tokenizer.pad_token_id, device=device)
+        decoder_input_ids = torch.cat([start_tokens, decoder_inputs.input_ids], dim=1)
+        start_mask = torch.ones((batch_size, 1), dtype=torch.long, device=device)
+        decoder_attention_mask = torch.cat([start_mask, decoder_inputs.attention_mask], dim=1)
 
-        decoder_input_refs = ref_ids_tensor.unsqueeze(1)   # shape (B, 1)
-        decoder_input_alts = alt_ids_tensor.unsqueeze(1) # shape (B, 1)
 
         with torch.no_grad():
-            # Step 3: Forward pass for alt 
-            out_alt = model(**enc_inputs, decoder_input_ids=decoder_input_alts)
-            logprobs_alt = torch.softmax(out_alt.logits[:, 0, :], dim=1) # shape (B, Vocab_size)
-            logp_alt = logprobs_alt.gather(1, alt_ids_tensor.unsqueeze(1)).squeeze(1) # shape (B,)
+            outputs = model(
+                input_ids=enc_inputs.input_ids,
+                attention_mask=enc_inputs.attention_mask,
+                decoder_input_ids=decoder_input_ids,
+                decoder_attention_mask=decoder_attention_mask
+            )
 
-            # Step 4: Forward pass for ref
-            out_ref = model(**enc_inputs, decoder_input_ids=decoder_input_refs)
-            logprobs_ref = torch.softmax(out_ref.logits[:, 0, :], dim=1) # shape (B, Vocab_size)
-            logp_ref = logprobs_ref.gather(1, ref_ids_tensor.unsqueeze(1)).squeeze(1) # shape (B,)
+            logits = outputs.logits
+            
+            seq_lengths = decoder_attention_mask.sum(dim=1) - 1
+            batch_indices = torch.arange(len(seq_lengths), device=device)
+            logits_i = logits[batch_indices, seq_lengths, :]  # logits at mutation position
+            
+            probs = torch.nn.functional.softmax(logits_i, dim=-1)
 
-            log_odds = (logp_alt - logp_ref).tolist()
+            ref_ids_tensor = torch.tensor(ref_ids, device=device)
+            alt_ids_tensor = torch.tensor(alt_ids, device=device)
 
-        
-        # Step 5: Assing log odds to correct position 
+            p_ref = probs[batch_indices, ref_ids_tensor]
+            p_alt = probs[batch_indices, alt_ids_tensor]
+
+            log_odds = torch.log(p_alt) - torch.log(p_ref)
+            log_odds = log_odds.tolist()
+
         for i, log_odd_value in zip(indices, log_odds):
             results[i] = log_odd_value
-        
+
         return results
+
+
+
+    
+    # def compute_pll_difference(self, model, seqs, poses, refs, alts):
+    #     results = [None] * len(seqs)
+    #     device = next(model.parameters()).device
+    #     valid_data = []
+
+    #     for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
+    #         if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
+    #             ref_id = self.tokenizer.convert_tokens_to_ids(ref)
+    #             alt_id = self.tokenizer.convert_tokens_to_ids(alt)
+    #             if ref_id is None or alt_id is None:
+    #                 continue
+    #             valid_data.append((i, seq, pos, ref_id, alt_id))
+        
+    #     indices, valid_seqs, valid_poses, ref_ids, alt_ids = zip(*valid_data)
+
+    #     for 
+
+
+
+
+
+
+
+    # def compute_log_odds_encoder_decoder(self, model, seqs, poses, refs, alts):
+    #     """
+    #     Which token (ref or alt) is more probable at position i, given the unmutated sequence upto position i as context.
+    #     Computes zero-shot variant effect scores for encoder-decoder models (e.g., T5).
+    #     For each variant:
+    #         log_odds = log P(alt | decoder_prefix, reference_sequence) - log P(ref | decoder_prefix, reference_sequence)
+
+    #     Where:
+    #         • The encoder always receives the full *reference sequence* (unmutated).
+    #         • The decoder is given the prefix of the reference sequence *up to but not including* the variant position.
+    #         • The model is asked to predict the next token (at the variant position), and we compare the probabilities it assigns to the ref and alt tokens.
+
+
+    #     • One encoder forward pass per batch
+    #     • Two decoder passes per variant (one for ref, one for alt)
+    #     """
+    #     results = [None] * len(seqs)
+    #     device = next(model.parameters()).device
+
+    #     # Step 1: Filter valid examples from the batch
+    #     valid_data = []
+    #     for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
+    #         # Skip variants at position 0 (no prefix to condition on)
+    #         if pos == 0:
+    #             continue
+    #         if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
+
+    #             ref_id = self.tokenizer.convert_tokens_to_ids(ref)
+    #             alt_id = self.tokenizer.convert_tokens_to_ids(alt)
+
+    #             if ref_id is None or alt_id is None:
+    #                 continue
+
+    #             valid_data.append((i, seq, pos, ref_id, alt_id))
+
+        
+    #     if not valid_data:
+    #         return results # all None 
+
+    #     indices, valid_seqs, valid_poses, ref_ids, alt_ids = zip(*valid_data)
+
+    #     # Step 2: Tokenize encoder input sequences
+    #     # enc_inputs.input_ids: [B, L_enc]
+    #     enc_inputs = self.tokenizer(
+    #         list(valid_seqs),
+    #         return_tensors="pt",
+    #         padding="longest",
+    #         truncation=True,
+    #         max_length=self.max_len
+    #     ).to(device)
+
+    #     # Step 3: Prepare decoder inputs (prefixes up to mutation site)
+    #     decoder_prefixes = [seq[:pos] for seq, pos in zip(valid_seqs, valid_poses)]
+    #     # print(f"Decoder prefixes (first 5): {decoder_prefixes[:5]}")
+    #    # decoder_inputs.input_ids: [B, L_dec] (L_dec varies but is padded)
+    #     decoder_inputs = self.tokenizer(
+    #         decoder_prefixes,
+    #         return_tensors="pt",
+    #         padding="longest",
+    #         truncation=True,
+    #         max_length=self.max_len
+    #     ).to(device)
+
+    #     with torch.no_grad():
+    #         # Step 4: Forward pass
+    #         outputs = model(
+    #             input_ids=enc_inputs.input_ids,                # [B, L_enc]
+    #             attention_mask=enc_inputs.attention_mask,      # [B, L_enc]
+    #             decoder_input_ids=decoder_inputs.input_ids,    # [B, L_dec]
+    #             decoder_attention_mask=decoder_inputs.attention_mask,  # [B, L_dec]
+    #         )
+
+    #         # outputs.logits: [B, L_dec, V] (V = vocab size)
+    #         logits = outputs.logits
+
+    #         # Step 5: Get logits for the next token at variant position (last in decoder sequence)
+    #         # logits_i: [B, V]
+    #         logits_i = logits[:, -1, :]
+
+    #         # probs: [B, V] — probability distribution over vocab for each sample
+    #         probs = torch.nn.functional.softmax(logits_i, dim=-1)
+
+    #         # ref_ids_tensor / alt_ids_tensor: [B]
+    #         ref_ids_tensor = torch.tensor(ref_ids, device=device) # Shape: [B]
+    #         alt_ids_tensor = torch.tensor(alt_ids, device=device) # Shape: [B]
+
+    #         # p_ref / p_alt: [B]
+    #         # grab the model's predicted probability for the specific token (ref or alt) for each sample
+    #         p_ref = probs[torch.arange(len(ref_ids_tensor)), ref_ids_tensor]  # p_ref[i] = P(ref_token_i | decoder_prefix_i)
+    #         p_alt = probs[torch.arange(len(alt_ids_tensor)), alt_ids_tensor]  # p_alt[i] = P(alt_token_i | decoder_prefix_i)
+
+    #         # log_odds: [B]
+    #         log_odds = torch.log(p_alt) - torch.log(p_ref)
+    #         log_odds = log_odds.tolist()
+
+
+    #     # Step 6: Assign results to original positions
+    #     for i, log_odd_value in zip(indices, log_odds):
+    #         results[i] = log_odd_value
+        
+    #     return results
 
         
     
@@ -305,10 +425,10 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         if is_initialized():
             barrier()
 
-    def on_step_begin(self, args, state, control, model=None, **kwargs):
-        if state.global_step == 0:
-            self.run_vep_eval(model, step_id=state.global_step)
-        return control
+    # def on_step_begin(self, args, state, control, model=None, **kwargs):
+    #     if state.global_step == 0:
+    #         self.run_vep_eval(model, step_id=state.global_step)
+    #     return control
 
     def on_step_end(self, args, state, control, model=None, **kwargs):
         if state.global_step % self.eval_every_n_steps == 0 and state.global_step > 0:

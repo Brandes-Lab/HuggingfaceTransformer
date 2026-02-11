@@ -121,9 +121,14 @@ class PhyloCollator:
             labels[labels == self.tokenizer.pad_token_id] = -100
 
             assert(labels == -100).sum() == (dec["input_ids"] == self.tokenizer.pad_token_id).sum()
+            
+            # Verify attention_mask matches padding
+            assert (dec["attention_mask"] == 0).sum() == (dec["input_ids"] == self.tokenizer.pad_token_id).sum()
+
             batch_out = {
                 "input_ids": enc["input_ids"],
                 "attention_mask": enc["attention_mask"],
+                "decoder_attention_mask": dec["attention_mask"],
                 "labels": labels,
             }
 

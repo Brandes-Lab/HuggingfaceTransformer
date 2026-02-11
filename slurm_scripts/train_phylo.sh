@@ -1,18 +1,27 @@
 #!/bin/bash
 #SBATCH --job-name=t5_small_phylo_lr_1e-4096
-#SBATCH --partition=a100_short
+#SBATCH --partition=a100_long
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
-#SBATCH --time=03-00:00:00
+#SBATCH --time=28-00:00:00
 #SBATCH --output=phylo-training-%j.out
 #SBATCH --error=phylo-training-%j.err
 
 
 # === Load and activate conda environment ===
-module load anaconda3
-source /gpfs/share/apps/anaconda3/gpu/2023.09/etc/profile.d/conda.sh
+# module load anaconda3
+source $(conda info --base)/etc/profile.d/conda.sh
 conda activate /gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert
+
+# === Confirm CUDA Access ===
+which python
+python - <<'EOF'
+import torch
+print("torch version:", torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+print("CUDA device name:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None")
+EOF
 
 # === Print environment info for reproducibility ===
 echo "Python executable: $(which python)"
@@ -57,6 +66,7 @@ cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 
 # === Ensure local gLM package is used (prepend to PYTHONPATH) ===
 # export PYTHONPATH="/gpfs/data/oermannlab/users/bml398/HuggingfaceTransformer:$PYTHONPATH"
+export PATH=/gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert/bin:$PATH
 
 # === Use a random master port for torch distributed ===
 export MASTER_PORT=$((29500 + RANDOM % 1000))

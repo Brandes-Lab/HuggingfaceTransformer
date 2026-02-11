@@ -5,9 +5,10 @@ from transformers import(
 
 
 class ProteinT5Model:
-    def __init__(self, vocab_size, tokenizer):
+    def __init__(self, vocab_size, tokenizer, attn_implementation):
         self.vocab_size = vocab_size
         self.tokenizer = tokenizer
+        self.attn_implementation = attn_implementation
     
     def build(self):
         config = T5Config(
@@ -23,5 +24,7 @@ class ProteinT5Model:
             initializer_factor=1.0,
             feed_forward_proj="relu"
         )
+        config._attn_implementation = self.attn_implementation
+        print(f"Using {self.attn_implementation} attention")
         model = T5ForConditionalGeneration(config)
         return model
