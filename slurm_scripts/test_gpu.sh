@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=modernBERT_100M_phylo_lr5e-4_bs128_ctxt_4096
-#SBATCH --partition=a100_short
-#SBATCH --gres=gpu:a100:1
+#SBATCH --job-name=T5Gemma_97M_phylo_lr1e-4_bs256_ctxt_1024_2
+#SBATCH --partition=gl40s_short
+#SBATCH --gres=gpu:l40s:1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=100G
 #SBATCH --time=03-00:00:00
@@ -61,6 +61,9 @@ export HF_DATASETS_CACHE=$HF_HOME
 export WANDB_PROJECT=phylo-llm
 export WANDB_API_KEY=ae9049d442db2ba3fa77f7928c1dae68353b3762
 export TOKENIZERS_PARALLELISM=false
+
+export MASTER_PORT=$((29500 + RANDOM % 1000))
+
 
 # === Change to project dir ===
 cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
@@ -132,62 +135,92 @@ cd /gpfs/data/brandeslab/Project/HuggingfaceTransformer/
 #   --save_strategy "no" 
 
 
+torchrun \
+--nproc-per-node=1 \
+--master_port=${MASTER_PORT} \
+python_scripts/train_modernBERT.py \
+--run-name T5Gemma_97M_phylo_lr1e-4_bs256_ctxt_1024_2 \
+--model_type "T5Gemma" \
+--training_type "phylo_encoder_decoder" \
+--wandb_project "phylo-llm" \
+--tokenizer-path ./phylo_char_tokenizer_updated \
+--train_dataset_type "seq_pair_map" \
+--max_position_embeddings 1024 \
+--train_dataset_path /gpfs/data/brandeslab/Data/uniref/hf_pairs_uniref90_final/train.jsonl \
+--index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
+--fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
+--vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+--output-dir /gpfs/data/brandeslab/model_checkpts \
+--num_train_epochs 100 \
+--logging_steps 4 \
+--batch_sampler "phylo_default" \
+--per_device_train_batch_size 8 \
+--gradient_accumulation_steps 32 \
+--learning_rate 1e-4 \
+--dataloader_num_workers 16 \
+--dataloader_persistent_workers True \
+--dataloader_prefetch_factor 8 \
+--eval_strategy "no" \
+--save_strategy "steps" \
+--save_steps 500 \
+
 
 # torchrun \
 # --nproc-per-node=1 \
+# --master_port=${MASTER_PORT} \
 # python_scripts/train_modernBERT.py \
-# --run-name T5Gemma_97M_phylo_lr1e-4_bs128_ctxt_4096 \
-# --model_type "T5Gemma" \
-# --training_type "phylo_encoder_decoder" \
+# --run-name modernBERT_34M_phylo_lr6e-4_bs4096_ctxt_1024 \
+# --model_type "ModernBERT" \
+# --training_type "phylo_encoder_only" \
 # --wandb_project "phylo-llm" \
 # --tokenizer-path ./phylo_char_tokenizer_updated \
 # --train_dataset_type "iterable" \
-# --max_position_embeddings 4096 \
+# --max_position_embeddings 1024 \
 # --train_dataset_path /gpfs/data/brandeslab/Data/uniref/hf_pairs_uniref90_final/train.jsonl \
 # --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
 # --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
 # --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
 # --output-dir /gpfs/data/brandeslab/model_checkpts \
-# --max_steps 10000000 \
+# --max_steps 10000 \
 # --logging_steps 4 \
 # --batch_sampler "phylo_default" \
-# --per_device_train_batch_size 4 \
+# --per_device_train_batch_size 128 \
 # --gradient_accumulation_steps 32 \
-# --learning_rate 1e-4 \
-# --vep_eval_steps 2000 \
+# --learning_rate 6e-4 \
+# --vep_eval_steps 200 \
 # --dataloader_num_workers 16 \
 # --dataloader_persistent_workers True \
 # --dataloader_prefetch_factor 8 \
 # --eval_strategy "no" \
 # --save_strategy "no"
 
-export MASTER_PORT=$((29500 + RANDOM % 1000))
 
-torchrun \
---nproc-per-node=1 \
---master_port=${MASTER_PORT} \
-python_scripts/train_modernBERT.py \
---run-name modernBERT_100M_phylo_lr5e-4_bs128_ctxt_4096 \
---model_type "ModernBERT" \
---training_type "phylo_encoder_decoder" \
---wandb_project "phylo-llm" \
---tokenizer-path ./phylo_char_tokenizer_updated \
---train_dataset_type "iterable" \
---max_position_embeddings 4096 \
---train_dataset_path /gpfs/data/brandeslab/Data/uniref/hf_pairs_uniref90_final/train.jsonl \
---index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
---fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
---vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
---output-dir /gpfs/data/brandeslab/model_checkpts \
---max_steps 10000000 \
---logging_steps 4 \
---batch_sampler "phylo_default" \
---per_device_train_batch_size 4 \
---gradient_accumulation_steps 32 \
---learning_rate 5e-4 \
---vep_eval_steps 2000 \
---dataloader_num_workers 16 \
---dataloader_persistent_workers True \
---dataloader_prefetch_factor 8 \
---eval_strategy "no" \
---save_strategy "no"
+
+# torchrun \
+# --nproc-per-node=1 \
+# --master_port=${MASTER_PORT} \
+# python_scripts/train_modernBERT.py \
+# --run-name modernBERT_113M_phylo_lr3e-4_bs4096_ctxt_1024 \
+# --model_type "ModernBERT" \
+# --training_type "phylo_encoder_only" \
+# --wandb_project "phylo-llm" \
+# --tokenizer-path ./phylo_char_tokenizer_updated \
+# --train_dataset_type "iterable" \
+# --max_position_embeddings 1024 \
+# --train_dataset_path /gpfs/data/brandeslab/Data/uniref/hf_pairs_uniref90_final/train.jsonl \
+# --index_db_path /gpfs/data/brandeslab/User/as12267/uniref100.idx \
+# --fasta_path /gpfs/data/brandeslab/Data/uniref/uniref100.fasta \
+# --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
+# --output-dir /gpfs/data/brandeslab/model_checkpts \
+# --max_steps 10000 \
+# --logging_steps 4 \
+# --batch_sampler "phylo_default" \
+# --per_device_train_batch_size 64 \
+# --gradient_accumulation_steps 64 \
+# --learning_rate 6e-4 \
+# --vep_eval_steps 200 \
+# --dataloader_num_workers 16 \
+# --dataloader_persistent_workers True \
+# --dataloader_prefetch_factor 8 \
+# --eval_strategy "no" \
+# --save_strategy "no"

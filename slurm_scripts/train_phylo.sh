@@ -184,8 +184,10 @@ time torchrun \
   --batch_sampler "phylo_default" \
   --per_device_train_batch_size 128 \
   --gradient_accumulation_steps 32 \
-  --learning_rate 1e-3 \
-  --vep_eval_steps 230 \
+  --learning_rate 1e-4 \
+  --lr_scheduler_type "cosine" \
+  --warmup_steps 500 \
+  --vep_eval_steps 1000 \
   --dataloader_num_workers 16 \
   --dataloader_persistent_workers True \
   --dataloader_prefetch_factor 8 \

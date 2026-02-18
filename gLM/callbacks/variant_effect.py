@@ -219,30 +219,6 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
 
 
 
-    
-    # def compute_pll_difference(self, model, seqs, poses, refs, alts):
-    #     results = [None] * len(seqs)
-    #     device = next(model.parameters()).device
-    #     valid_data = []
-
-    #     for i, (seq, pos, ref, alt) in enumerate(zip(seqs, poses, refs, alts)):
-    #         if len(seq) <= self.max_len and pos < len(seq) and seq[pos] == ref:
-    #             ref_id = self.tokenizer.convert_tokens_to_ids(ref)
-    #             alt_id = self.tokenizer.convert_tokens_to_ids(alt)
-    #             if ref_id is None or alt_id is None:
-    #                 continue
-    #             valid_data.append((i, seq, pos, ref_id, alt_id))
-        
-    #     indices, valid_seqs, valid_poses, ref_ids, alt_ids = zip(*valid_data)
-
-    #     for 
-
-
-
-
-
-
-
     # def compute_log_odds_encoder_decoder(self, model, seqs, poses, refs, alts):
     #     """
     #     Which token (ref or alt) is more probable at position i, given the unmutated sequence upto position i as context.
@@ -425,10 +401,10 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
         if is_initialized():
             barrier()
 
-    # def on_step_begin(self, args, state, control, model=None, **kwargs):
-    #     if state.global_step == 0:
-    #         self.run_vep_eval(model, step_id=state.global_step)
-    #     return control
+    def on_step_begin(self, args, state, control, model=None, **kwargs):
+        if state.global_step == 0:
+            self.run_vep_eval(model, step_id=state.global_step)
+        return control
 
     def on_step_end(self, args, state, control, model=None, **kwargs):
         if state.global_step % self.eval_every_n_steps == 0 and state.global_step > 0:

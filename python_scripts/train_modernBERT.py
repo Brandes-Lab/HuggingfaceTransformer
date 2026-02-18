@@ -28,7 +28,7 @@ from gLM.models import ProteinT5GemmaModel
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, PhyloCollator
-from gLM.dataset import SeqPairIterableDataset
+from gLM.dataset import SeqPairIterableDataset, SeqPairMapDataset
 from gLM.train_utils import PhyloTrainer
 
 # Define device globally
@@ -151,7 +151,7 @@ class CustomTrainingArguments(TrainingArguments):
 @dataclass
 class DataArguments:
     """Arguments for data configuration."""
-    train_dataset_type: Literal["iterable", "map"] = field(
+    train_dataset_type: Literal["iterable", "tokenized_map", "seq_pair_map"] = field(
         default="iterable", metadata={"help": "Type of training dataset"}
     )
     train_dataset_path: str = field(
@@ -285,17 +285,24 @@ def main():
        
 
 
-
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
     print(f"max_position_embeddings: {model_args.max_position_embeddings}")
 
-    if data_args.train_dataset_type == "map":
+    if data_args.train_dataset_type == "tokenized_map":
         print(f"using pre-tokenized dataset")
         train_ds = load_from_disk(data_args.train_dataset_path)
         # train_ds = train_ds.select(range(500))  # for testing
         val_ds = load_from_disk(data_args.val_dataset_path)
         val_ds = val_ds.shuffle(seed=42)
+    
+    elif data_args.train_dataset_type == "seq_pair_map":
+        print(f"using Seq Pair Map dataset")
+        train_ds = SeqPairMapDataset(
+                    dataset_path=data_args.train_dataset_path,
+                    training_type=training_args.training_type,
+                )
+        val_ds = None
     
     elif data_args.train_dataset_type == "iterable":
         print(f"using iterable dataset")
@@ -359,17 +366,17 @@ def main():
     if training_args.training_type == "phylo_encoder_only":
         trainer.add_callback(PercentIdentityLoggingCallback())
 
-    trainer.add_callback(
-        ZeroShotVEPEvaluationCallback(
-            tokenizer=tokenizer,
-            input_csv=data_args.vep_input_csv,
-            trainer=trainer,
-            max_len=model_args.max_position_embeddings,
-            batch_size=8,
-            eval_every_n_steps=training_args.vep_eval_steps,
-            training_type=training_args.training_type, 
-        )
-    )
+    # trainer.add_callback(
+    #     ZeroShotVEPEvaluationCallback(
+    #         tokenizer=tokenizer,
+    #         input_csv=data_args.vep_input_csv,
+    #         trainer=trainer,
+    #         max_len=model_args.max_position_embeddings,
+    #         batch_size=8,
+    #         eval_every_n_steps=training_args.vep_eval_steps,
+    #         training_type=training_args.training_type, 
+    #     )
+    # )
 
     trainer.add_callback(ElapsedTimeLoggerCallback())
     # trainer.add_callback(LossPrintCallback())

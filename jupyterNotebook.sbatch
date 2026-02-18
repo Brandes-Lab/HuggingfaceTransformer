@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #SBATCH --job-name=jupyterGPU
-#SBATCH --partition=a100_long
+#SBATCH --partition=gl40s_short
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:l40s:1
 #SBATCH --cpus-per-task=4
 #SBATCH --time=03-00:00:00
 #SBATCH --mem=50G
