@@ -319,12 +319,14 @@ def main():
         print(f"Using MLM collator for training type: {training_args.training_type}")
         print(f"Using {training_args.mlm_probability} masking probability")
         data_collator = create_mlm_collator(
-            tokenizer,
-            mlm_probability=training_args.mlm_probability
-        )
+                tokenizer,
+                max_seq_len=model_args.max_position_embeddings,  
+                mlm_probability=training_args.mlm_probability    
+            )
+
 
     elif training_args.training_type in ["phylo_encoder_only", "phylo_encoder_decoder"]:
-        print(f"Using SequencePairCollator collator for training type: {training_args.training_type}")
+        print(f"Using Phylo collator for training type: {training_args.training_type}")
         data_collator = PhyloCollator(
                 tokenizer=tokenizer,
                 training_type=training_args.training_type,
@@ -366,17 +368,17 @@ def main():
     if training_args.training_type == "phylo_encoder_only":
         trainer.add_callback(PercentIdentityLoggingCallback())
 
-    # trainer.add_callback(
-    #     ZeroShotVEPEvaluationCallback(
-    #         tokenizer=tokenizer,
-    #         input_csv=data_args.vep_input_csv,
-    #         trainer=trainer,
-    #         max_len=model_args.max_position_embeddings,
-    #         batch_size=8,
-    #         eval_every_n_steps=training_args.vep_eval_steps,
-    #         training_type=training_args.training_type, 
-    #     )
-    # )
+    trainer.add_callback(
+        ZeroShotVEPEvaluationCallback(
+            tokenizer=tokenizer,
+            input_csv=data_args.vep_input_csv,
+            trainer=trainer,
+            max_len=model_args.max_position_embeddings,
+            batch_size=8,
+            eval_every_n_steps=training_args.vep_eval_steps,
+            training_type=training_args.training_type, 
+        )
+    )
 
     trainer.add_callback(ElapsedTimeLoggerCallback())
     # trainer.add_callback(LossPrintCallback())

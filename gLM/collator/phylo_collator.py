@@ -32,17 +32,8 @@ class PhyloCollator:
 
     def __call__(self, batch):
 
-        if self.training_type == "MLM":
-            # batch: List(str)
-            # truncate to max length if needed, pad to the max in the batch
-            return self.tokenizer(
-                batch, 
-                padding="longest", 
-                truncation=True,
-                max_length=self.max_seq_len,
-                return_tensors="pt")
 
-        elif self.training_type == "phylo_encoder_only":
+        if self.training_type == "phylo_encoder_only":
             # P(Seq1 | Seq2), input_ids from Seq2, labels from Seq1
             # batch: List[Tuple[a1, a2, pid]]
             a1s, a2s, pids = zip(*batch)
@@ -142,3 +133,4 @@ class PhyloCollator:
 
         else:
             raise ValueError(f"Unsupported training_type: {self.training_type}")
+
