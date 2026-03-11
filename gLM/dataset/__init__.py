@@ -1,9 +1,9 @@
-from .uniref_iterable import UniRefClusterIterableDataset
-from .seq_pair_iterable import SeqPairIterableDataset
-from .seq_pair_map import SeqPairMapDataset
+from .uniref90_pair_arrow_fasta import Uniref90ArrowDatasetForFASTA, Uniref90ArrowEvalDatasetForFASTA
+from .uniref90_pair_arrow_lmdb import Uniref90ArrowDatasetForLMDB, Uniref90ArrowEvalDatasetForLMDB
 
 __all__ = [
-    "UniRefClusterIterableDataset",
-    "SeqPairIterableDataset", 
-    "SeqPairMapDataset"
+    "Uniref90ArrowDatasetForFASTA", 
+    "Uniref90ArrowEvalDatasetForFASTA", 
+    "Uniref90ArrowDatasetForLMDB", 
+    "Uniref90ArrowEvalDatasetForLMDB"
 ]

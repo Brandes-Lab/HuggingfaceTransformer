@@ -4,26 +4,6 @@ from gLM.sequences.pairwise_align import align_pair, percent_identity
 
 
 
-class SequencePairCollator(DataCollatorForTokenClassification):
-    def __init__(self, tokenizer, training_type, **kwargs):
-        super().__init__(tokenizer, **kwargs)
-        self.training_type = training_type
-
-    def __call__(self, features):
-        if self.training_type == "phylo_encoder":
-            percent_identities = [feature.pop("percent_identity") for feature in features]
-            batch = super().__call__(features)
-            batch["percent_identity"] = torch.tensor(percent_identities, dtype=torch.float32)
-            return batch
-
-        elif self.training_type == "phylo_encoder_decoder":
-            return super().__call__(features)
-
-        else:
-            raise ValueError(f"Unsupported training_type: {self.training_type}")
-
-
-
 class PhyloCollator:
     def __init__(self, tokenizer, training_type: str, max_seq_len: int):
         self.tokenizer = tokenizer
@@ -71,6 +51,7 @@ class PhyloCollator:
                 "input_ids": input_ids["input_ids"],
                 "attention_mask": input_ids["attention_mask"],
                 "labels": labels,
+                "percent_identity": torch.tensor(pids, dtype=torch.float32),
             }
             
             return batch_out

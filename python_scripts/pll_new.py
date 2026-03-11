@@ -2,7 +2,7 @@
 import os
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 import numpy as np
 import pandas as pd
@@ -10,12 +10,11 @@ import torch
 import torch.nn.functional as F
 import torch.distributed as dist
 from sklearn.metrics import roc_auc_score
-import wandb
 
 from transformers import (
     HfArgumentParser,
     PreTrainedTokenizerFast,
-    T5GemmaForConditionalGeneration,  # PLL needs logits
+    T5GemmaForConditionalGeneration,  # needs logits
 )
 
 # -----------------------------
@@ -45,12 +44,6 @@ def maybe_init_distributed():
 # Args
 # -----------------------------
 @dataclass
-class WandbArguments:
-    wandb_project: str = field(default="phylo_llm")
-    wandb_entity: str = field(default="sinha-anushka12-na")
-    disable_wandb: bool = field(default=False)
-
-@dataclass
 class EvalArguments:
     model_ckpt: str = field(metadata={"help": "HF checkpoint repo id or local folder"})
     zero_shot_csv: str = field(metadata={"help": "CSV with columns: sequence,pos,ref,alt,label"})
@@ -64,6 +57,11 @@ class EvalArguments:
     pll_mode: str = field(
         default="wtenc",
         metadata={"help": "PLL mode: wtenc | selfenc | both"},
+    )
+
+    out_dir: str = field(
+        default=".",
+        metadata={"help": "Directory to write the AUC CSV (rank 0 only)."},
     )
 
 # -----------------------------
@@ -239,6 +237,32 @@ def compute_pll_delta(
     return results
 
 
+def _safe_name_from_ckpt_path(model_ckpt: str) -> Tuple[str, str, str]:
+    """
+    Returns (model_dir_name, checkpoint_dir_name, csv_basename)
+
+    If model_ckpt is a local path:
+      .../<model_dir>/checkpoint-15060  -> model_dir, checkpoint-15060
+    If it's a HF repo id:
+      repo_id -> repo_id, repo_id (fallback)
+    """
+    p = model_ckpt.rstrip("/")
+
+    # local path?
+    if os.path.exists(p):
+        ckpt_name = os.path.basename(p)
+        parent = os.path.basename(os.path.dirname(p)) or ckpt_name
+        model_dir_name = parent
+        checkpoint_dir_name = ckpt_name
+    else:
+        # HF repo id fallback
+        model_dir_name = p.replace("/", "__")
+        checkpoint_dir_name = model_dir_name
+
+    csv_basename = f"{model_dir_name}__{checkpoint_dir_name}__pll_vep_auc.csv"
+    return model_dir_name, checkpoint_dir_name, csv_basename
+
+
 def run_vep_eval(
     df: pd.DataFrame,
     model,
@@ -246,9 +270,8 @@ def run_vep_eval(
     batch_size: int,
     max_len: int,
     step_id: int,
-    log_wandb: bool,
     pll_mode: str,  # wtenc | selfenc | both
-):
+) -> Dict[str, object]:
     rank = get_rank()
     world_size = get_world_size()
 
@@ -257,7 +280,6 @@ def run_vep_eval(
 
     print(f"[Rank {rank}] Starting PLL VEP eval @ step {step_id} (mode={pll_mode})", flush=True)
 
-    # Use python lists to avoid numpy object quirks
     seqs = df["sequence"].tolist()
     poses = df["pos"].to_numpy(dtype=np.int64)
     refs = df["ref"].tolist()
@@ -322,8 +344,18 @@ def run_vep_eval(
         local_data.append(tuple(row))
     all_gather_object(gathered_data, local_data)
 
+    results: Dict[str, object] = {
+        "step_id": int(step_id),
+        "pll_mode": pll_mode,
+        "n_total": int(n),
+        "elapsed_seconds": float(time.time() - start_time),
+        "auc_pll_wtenc": np.nan,
+        "auc_pll_selfenc": np.nan,
+        "n_scored_wtenc": 0,
+        "n_scored_selfenc": 0,
+    }
+
     if rank == 0:
-        # reconstruct full arrays
         flat_wtenc = np.full(n, np.nan, dtype=np.float32) if preds_wtenc is not None else None
         flat_selfenc = np.full(n, np.nan, dtype=np.float32) if preds_selfenc is not None else None
 
@@ -331,44 +363,49 @@ def run_vep_eval(
             for row in part:
                 idx = row[0]
                 if flat_wtenc is not None and flat_selfenc is not None:
-                    # (idx, label, pred_wtenc, pred_selfenc)
                     _, _, pw, ps = row
                     flat_wtenc[idx] = pw
                     flat_selfenc[idx] = ps
                 elif flat_wtenc is not None:
-                    # (idx, label, pred_wtenc)
                     _, _, pw = row
                     flat_wtenc[idx] = pw
                 else:
-                    # (idx, label, pred_selfenc)
                     _, _, ps = row
                     flat_selfenc[idx] = ps
 
-        def report_auc(preds: np.ndarray, name: str):
+        def compute_auc(preds: np.ndarray) -> Tuple[float, int]:
             mask = ~np.isnan(preds)
-            if mask.sum() >= 10 and (labels[mask].min() != labels[mask].max()):
-                auc = roc_auc_score(labels[mask], preds[mask])
-                print(f"AUC (PLL {name}) at step {step_id}: {auc:.4f}", flush=True)
-                if log_wandb:
-                    wandb.log({
-                        f"zero_shot_vep_auc_pll_{name}": auc,
-                        "step": step_id,
-                        "elapsed_hours": (time.time() - start_time) / 3600.0,
-                    })
-            else:
-                print(f"Skipping AUC (PLL {name}) due to insufficient data", flush=True)
+            n_scored = int(mask.sum())
+            if n_scored >= 10 and (labels[mask].min() != labels[mask].max()):
+                return float(roc_auc_score(labels[mask], preds[mask])), n_scored
+            return float("nan"), n_scored
 
         if flat_wtenc is not None:
-            report_auc(flat_wtenc, "wtenc")
-        if flat_selfenc is not None:
-            report_auc(flat_selfenc, "selfenc")
+            auc, n_scored = compute_auc(flat_wtenc)
+            results["auc_pll_wtenc"] = auc
+            results["n_scored_wtenc"] = n_scored
+            if not np.isnan(auc):
+                print(f"AUC (PLL wtenc) at step {step_id}: {auc:.4f}", flush=True)
+            else:
+                print("Skipping AUC (PLL wtenc) due to insufficient data", flush=True)
 
-        print(f"[TIMER] VEP eval took {time.time() - start_time:.2f} seconds", flush=True)
+        if flat_selfenc is not None:
+            auc, n_scored = compute_auc(flat_selfenc)
+            results["auc_pll_selfenc"] = auc
+            results["n_scored_selfenc"] = n_scored
+            if not np.isnan(auc):
+                print(f"AUC (PLL selfenc) at step {step_id}: {auc:.4f}", flush=True)
+            else:
+                print("Skipping AUC (PLL selfenc) due to insufficient data", flush=True)
+
+        print(f"[TIMER] VEP eval took {results['elapsed_seconds']:.2f} seconds", flush=True)
+
+    return results
 
 
 def main():
-    parser = HfArgumentParser((EvalArguments, WandbArguments))
-    eval_args, wandb_args = parser.parse_args_into_dataclasses()
+    parser = HfArgumentParser((EvalArguments,))
+    (eval_args,) = parser.parse_args_into_dataclasses()
 
     maybe_init_distributed()
     rank = get_rank()
@@ -390,18 +427,6 @@ def main():
         else:
             device = torch.device("cpu")
 
-    # W&B init
-    if not wandb_args.disable_wandb and eval_args.local_rank in (-1, 0) and rank == 0:
-        wandb.init(
-            project=wandb_args.wandb_project,
-            name=eval_args.run_name,
-            entity=wandb_args.wandb_entity,
-        )
-        log_wandb = True
-    else:
-        wandb.init(mode="disabled")
-        log_wandb = False
-
     if rank == 0:
         print(f"model_ckpt: {eval_args.model_ckpt}", flush=True)
         print(f"zero_shot_csv: {eval_args.zero_shot_csv}", flush=True)
@@ -409,6 +434,7 @@ def main():
         print(f"batch_size: {eval_args.batch_size}", flush=True)
         print(f"run_name: {eval_args.run_name}", flush=True)
         print(f"pll_mode: {eval_args.pll_mode}", flush=True)
+        print(f"out_dir: {eval_args.out_dir}", flush=True)
 
     tokenizer = PreTrainedTokenizerFast.from_pretrained(eval_args.model_ckpt)
     if tokenizer.pad_token_id is None:
@@ -424,16 +450,31 @@ def main():
         raise ValueError(f"CSV missing required columns: {missing}")
     df["pos"] = df["pos"].astype(int)
 
-    run_vep_eval(
+    results = run_vep_eval(
         df=df,
         model=model,
         tokenizer=tokenizer,
         batch_size=eval_args.batch_size,
         max_len=eval_args.max_len,
         step_id=eval_args.step_id,
-        log_wandb=log_wandb,
         pll_mode=eval_args.pll_mode,
     )
+
+    # Write CSV (rank 0 only)
+    if rank == 0:
+        model_dir_name, checkpoint_dir_name, csv_basename = _safe_name_from_ckpt_path(eval_args.model_ckpt)
+        os.makedirs(eval_args.out_dir, exist_ok=True)
+        out_path = os.path.join(eval_args.out_dir, csv_basename)
+
+        row = {
+            "model_ckpt": eval_args.model_ckpt,
+            "model_dir": model_dir_name,
+            "checkpoint_dir": checkpoint_dir_name,
+            "zero_shot_csv": eval_args.zero_shot_csv,
+            **results,
+        }
+        pd.DataFrame([row]).to_csv(out_path, index=False)
+        print(f"[Rank 0] Wrote AUC results to: {out_path}", flush=True)
 
 
 if __name__ == "__main__":

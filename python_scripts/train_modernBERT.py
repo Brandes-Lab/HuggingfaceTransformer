@@ -15,8 +15,6 @@ from transformers import (
 import wandb
 import time
 from gLM.callbacks import (
-    ElapsedTimeLoggerCallback,
-    LossPrintCallback,
     ZeroShotVEPEvaluationCallback,
     PercentIdentityLoggingCallback
 )
@@ -28,7 +26,7 @@ from gLM.models import ProteinT5GemmaModel
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, PhyloCollator
-from gLM.dataset import SeqPairIterableDataset, SeqPairMapDataset
+from gLM.dataset import Uniref90ArrowDatasetForFASTA, Uniref90ArrowEvalDatasetForFASTA, Uniref90ArrowDatasetForLMDB, Uniref90ArrowEvalDatasetForLMDB
 from gLM.train_utils import PhyloTrainer
 
 # Define device globally
@@ -44,7 +42,7 @@ else:
 
 
 def print_rank0(*args, **kwargs):
-    if int(os.environ.get("LOCAL_RANK", 0)) == 0:
+    if int(os.environ.get("RANK", "0")) == 0:
         print(*args, **kwargs)
 
 
@@ -135,7 +133,7 @@ class CustomTrainingArguments(TrainingArguments):
     bf16: bool = field(default=True)
     fp16: bool = field(default=False)
     eval_strategy: str = field(default="no")  # not running eval
-    # eval_steps: int = field(default=50000)
+    eval_steps: int = field(default=50000)
     logging_strategy: str = field(default="steps")
     save_strategy: str = field(default="steps")
     save_steps: int = field(default=1_000_000)
@@ -151,7 +149,7 @@ class CustomTrainingArguments(TrainingArguments):
 @dataclass
 class DataArguments:
     """Arguments for data configuration."""
-    train_dataset_type: Literal["iterable", "tokenized_map", "seq_pair_map"] = field(
+    train_dataset_type: Literal["tokenized_map", "uniref90_arrow_fasta", "uniref90_arrow_lmdb"] = field(
         default="iterable", metadata={"help": "Type of training dataset"}
     )
     train_dataset_path: str = field(
@@ -174,6 +172,10 @@ class DataArguments:
         default="/gpfs/data/brandeslab/User/as12267/uniref100.idx",
         metadata={"help": "Path to the index DB file for FASTA"},
     )
+    lmdb_path: str = field(
+        default="/gpfs/data/brandeslab/Data/uniref/uniref100_bk.lmdb",
+        metadata={"help": "Path to the LMDB file for FASTA sequences"},
+    )
 
 
 @dataclass
@@ -194,6 +196,10 @@ class WandbArguments:
 
 
 def main():
+    print("RANK", os.environ.get("RANK"),
+      "LOCAL_RANK", os.environ.get("LOCAL_RANK"),
+      "WORLD_SIZE", os.environ.get("WORLD_SIZE"))
+
     # Parse arguments
     parser = HfArgumentParser(
         (ModelArguments, DataArguments, CustomTrainingArguments, WandbArguments)
@@ -212,8 +218,9 @@ def main():
         f"[Rank {training_args.local_rank}] NCCL_TIMEOUT: {os.environ.get('NCCL_TIMEOUT')}"
     )
 
+    rank = int(os.environ.get("RANK", 0))       # global rank across all processes
     # Initialize wandb
-    if not wandb_args.disable_wandb and training_args.local_rank == 0:
+    if not wandb_args.disable_wandb and rank == 0:
         wandb.init(
             project=wandb_args.wandb_project,
             name=training_args.run_name,
@@ -222,22 +229,23 @@ def main():
     else:
         wandb.init(mode="disabled")
 
+
     # Load tokenizer
     tokenizer = PhyloTokenizerLoader(model_args.tokenizer_path)
-    print(f"Using tokenizer from: {model_args.tokenizer_path}")
+    print_rank0(f"Using tokenizer from: {model_args.tokenizer_path}")
     pad_id = tokenizer.pad_token_id
     mask_id = tokenizer.mask_token_id
     non_gap_id = tokenizer.convert_tokens_to_ids("-") 
     gap_id = tokenizer.convert_tokens_to_ids("[GAP]")
-    print("Phylo Tokenizer loaded. GAP ID:", gap_id)
-    print("Mask ID:", mask_id)
-    print("Non-GAP ID:", non_gap_id)
-    print("GAP ID:", gap_id)
+    print_rank0("Phylo Tokenizer loaded. GAP ID:", gap_id)
+    print_rank0("Mask ID:", mask_id)
+    print_rank0("Non-GAP ID:", non_gap_id)
+    print_rank0("GAP ID:", gap_id)
     print_rank0("Tokenizer vocab size:", tokenizer.vocab_size)
 
     # Build model
     if model_args.model_type == "ModernBERT":
-        print("Using ModernBERT model...")
+        print_rank0("Using ModernBERT model...")
 
         model = ProteinBertModel(
             vocab_size=tokenizer.vocab_size, 
@@ -247,16 +255,16 @@ def main():
         model.gradient_checkpointing_enable()
         model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-        print("Hidden size used:", model.config.hidden_size)
+        print_rank0("Hidden size used:", model.config.hidden_size)
     
     elif model_args.model_type == "T5":
-        print("Using T5 model...")
+        print_rank0("Using T5 model...")
         model = ProteinT5Model(
             vocab_size=tokenizer.vocab_size, 
             tokenizer=tokenizer
         ).build()
         model.config.decoder_start_token_id = tokenizer.pad_token_id
-        print("decoder_start_token_id =", model.config.decoder_start_token_id)
+        print_rank0("decoder_start_token_id =", model.config.decoder_start_token_id)
         model.gradient_checkpointing_enable()
         device = torch.device(f"cuda:{training_args.local_rank}" if torch.cuda.is_available() else "cpu")
         model.to(device)
@@ -264,17 +272,17 @@ def main():
 
         # model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-        print("Hidden size  used:", model.config.d_model)
+        print_rank0("Hidden size  used:", model.config.d_model)
 
     elif model_args.model_type == "T5Gemma":
-        print("Using T5Gemma model...")
+        print_rank0("Using T5Gemma model...")
         model = ProteinT5GemmaModel(
             vocab_size=tokenizer.vocab_size, 
             tokenizer=tokenizer, 
             attn_implementation=model_args.attn_implementation
         ).build()
         model.config.decoder_start_token_id = tokenizer.pad_token_id
-        print("decoder_start_token_id =", model.config.decoder_start_token_id)
+        print_rank0("decoder_start_token_id =", model.config.decoder_start_token_id)
         model.gradient_checkpointing_enable()
         device = torch.device(f"cuda:{training_args.local_rank}" if torch.cuda.is_available() else "cpu")
         model.to(device)
@@ -282,42 +290,53 @@ def main():
 
         # model.to(training_args.local_rank)
         print_rank0(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
-       
-
 
     # Update training arguments with parsed values
     training_args.output_dir = f"{training_args.output_dir}/{training_args.run_name}"
-    print(f"max_position_embeddings: {model_args.max_position_embeddings}")
+    print_rank0(f"max_position_embeddings: {model_args.max_position_embeddings}")
 
     if data_args.train_dataset_type == "tokenized_map":
-        print(f"using pre-tokenized dataset")
+        print_rank0(f"using pre-tokenized dataset")
         train_ds = load_from_disk(data_args.train_dataset_path)
         # train_ds = train_ds.select(range(500))  # for testing
         val_ds = load_from_disk(data_args.val_dataset_path)
         val_ds = val_ds.shuffle(seed=42)
     
-    elif data_args.train_dataset_type == "seq_pair_map":
-        print(f"using Seq Pair Map dataset")
-        train_ds = SeqPairMapDataset(
+
+    elif data_args.train_dataset_type == "uniref90_arrow_fasta":
+        print_rank0(f"using Uniref90 Arrow and Index File dataset")
+        train_ds = Uniref90ArrowDatasetForFASTA(
                     dataset_path=data_args.train_dataset_path,
                     training_type=training_args.training_type,
+                    fasta_path=data_args.fasta_path,
+                    idx_db_path=data_args.index_db_path
                 )
-        val_ds = None
-    
-    elif data_args.train_dataset_type == "iterable":
-        print(f"using iterable dataset")
-
-        train_ds = SeqPairIterableDataset(
-                dataset_path=data_args.train_dataset_path,
-                tokenizer=tokenizer,
-                training_type=training_args.training_type,
-                shuffle_buffer=100000
+        val_ds = Uniref90ArrowEvalDatasetForFASTA(
+            dataset_path=data_args.val_dataset_path,
+            training_type=training_args.training_type,
+            fasta_path=data_args.fasta_path,
+            idx_db_path=data_args.index_db_path
         )
-        val_ds = None  # No eval dataset for iterable dataset
+        print_rank0("Validation dataset size:", len(val_ds))
+    
+    elif data_args.train_dataset_type == "uniref90_arrow_lmdb":
+        print_rank0(f"using Uniref90 Arrow and LMDB dataset")
+        train_ds = Uniref90ArrowDatasetForLMDB(
+                    dataset_path=data_args.train_dataset_path,
+                    training_type=training_args.training_type,
+                    lmdb_path=data_args.lmdb_path
+                )
+        val_ds = Uniref90ArrowEvalDatasetForLMDB(
+            dataset_path=data_args.val_dataset_path,
+            training_type=training_args.training_type,
+            lmdb_path=data_args.lmdb_path
+        )
+        print_rank0("Validation dataset size:", len(val_ds))
+
 
     if training_args.training_type == "MLM":
-        print(f"Using MLM collator for training type: {training_args.training_type}")
-        print(f"Using {training_args.mlm_probability} masking probability")
+        print_rank0(f"Using MLM collator for training type: {training_args.training_type}")
+        print_rank0(f"Using {training_args.mlm_probability} masking probability")
         data_collator = create_mlm_collator(
                 tokenizer,
                 max_seq_len=model_args.max_position_embeddings,  
@@ -326,7 +345,7 @@ def main():
 
 
     elif training_args.training_type in ["phylo_encoder_only", "phylo_encoder_decoder"]:
-        print(f"Using Phylo collator for training type: {training_args.training_type}")
+        print_rank0(f"Using Phylo collator for training type: {training_args.training_type}")
         data_collator = PhyloCollator(
                 tokenizer=tokenizer,
                 training_type=training_args.training_type,
@@ -334,7 +353,7 @@ def main():
             )
 
     if training_args.batch_sampler == "phylo_default":
-        print("using phylo_default Trainer")
+        print_rank0("using phylo_default Trainer")
         trainer = PhyloTrainer(
             model=model,
             args=training_args,
@@ -344,7 +363,7 @@ def main():
             data_collator=data_collator,
         )
     elif training_args.batch_sampler != "default":
-        print("using CustomBatchSizeTrainer")
+        print_rank0("using CustomBatchSizeTrainer")
         trainer = CustomBatchSizeTrainer(
             model=model,
             args=training_args,
@@ -354,7 +373,7 @@ def main():
             data_collator=data_collator,
         )
     else:
-        print("using default Trainer")
+        print_rank0("using default Trainer")
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -368,19 +387,18 @@ def main():
     if training_args.training_type == "phylo_encoder_only":
         trainer.add_callback(PercentIdentityLoggingCallback())
 
-    trainer.add_callback(
-        ZeroShotVEPEvaluationCallback(
-            tokenizer=tokenizer,
-            input_csv=data_args.vep_input_csv,
-            trainer=trainer,
-            max_len=model_args.max_position_embeddings,
-            batch_size=8,
-            eval_every_n_steps=training_args.vep_eval_steps,
-            training_type=training_args.training_type, 
-        )
-    )
+    # trainer.add_callback(
+    #     ZeroShotVEPEvaluationCallback(
+    #         tokenizer=tokenizer,
+    #         input_csv=data_args.vep_input_csv,
+    #         trainer=trainer,
+    #         max_len=model_args.max_position_embeddings,
+    #         batch_size=256,
+    #         eval_every_n_steps=training_args.vep_eval_steps,
+    #         training_type=training_args.training_type, 
+    #     )
+    # )
 
-    trainer.add_callback(ElapsedTimeLoggerCallback())
     # trainer.add_callback(LossPrintCallback())
     # print_rank0("\nInspecting shapes of first few batches...")
     # train_dataloader = trainer.get_train_dataloader()
@@ -395,22 +413,40 @@ def main():
     #     if i == 3:  # stop after 4 batches
     #         break
 
-    print("Benchmarking: Fetching 100 batches from train_dataloader...")
+    # print("Benchmarking: Fetching 100 batches from train_dataloader...")
 
-    train_dataloader = trainer.get_train_dataloader()
+    # train_dataloader = trainer.get_train_dataloader()
 
-    print(f"DataLoader num_workers = {train_dataloader.num_workers}")
-    print(f"DataLoader prefetch_factor = {train_dataloader.prefetch_factor}")
-    print(f"DataLoader persistent_workers = {train_dataloader.persistent_workers}")
+    # print(f"DataLoader num_workers = {train_dataloader.num_workers}")
+    # print(f"DataLoader prefetch_factor = {train_dataloader.prefetch_factor}")
+    # print(f"DataLoader persistent_workers = {train_dataloader.persistent_workers}")
 
 
-    start = time.time()
-    for i, batch in enumerate(train_dataloader):
-        if i == 100:
-            break
-    end = time.time()
+    # start = time.time()
+    # for i, batch in enumerate(train_dataloader):
+    #     if i == 100:
+    #         break
+    # end = time.time()
 
-    print(f"Fetched 100 batches in {end - start:.2f} seconds")
+    # print(f"Fetched 100 batches in {end - start:.2f} seconds")
+
+
+    # if rank == 0:
+    #     model.eval()
+    #     train_dataloader = trainer.get_train_dataloader()
+    #     batch = next(iter(train_dataloader))
+    #     batch = {k: v.to(model.device) for k, v in batch.items()}
+    #     with torch.no_grad():
+    #         outputs = model(**batch)
+    #     labels = batch["labels"]
+    #     predicted_tokens_per_sample = (labels != -100).sum(dim=-1).float()
+    #     print(f"Model loss: {outputs.loss.item():.4f}")
+    #     print(f"Mean predicted tokens per sample: {predicted_tokens_per_sample.mean().item():.1f}")
+    #     print(f"Loss × mean_tokens: {outputs.loss.item() * predicted_tokens_per_sample.mean().item():.4f}")
+    #     print(f"Loss / mean_tokens: {outputs.loss.item() / predicted_tokens_per_sample.mean().item():.4f}")
+    #     model.train()
+
+    # --- END DEBUG ---
 
 
     trainer.train()

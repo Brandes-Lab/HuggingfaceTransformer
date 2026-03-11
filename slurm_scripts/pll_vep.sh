@@ -9,18 +9,14 @@
 #SBATCH --error=pll-test-epoch_4_wt_enc%j.err
 
 
-# === Load CUDA first ===
-module load cuda/11.8
+set -euo pipefail
 
-# === Verify CUDA module loaded ===
-echo "CUDA_HOME: $CUDA_HOME"
-echo "LD_LIBRARY_PATH: $LD_LIBRARY_PATH"
-which nvcc
-nvcc --version
+# --- environment ---
+module purge
+module load cuda/12.6
 
-# === Load and activate conda environment ===
 source /gpfs/share/apps/anaconda3/gpu/2023.09/etc/profile.d/conda.sh
-conda activate /gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert
+conda activate /gpfs/data/brandeslab/User/as12267/.conda/envs/huggingface_bert_cu126
 
 # === Confirm CUDA + PyTorch ===
 echo "Python executable: $(which python)"
@@ -39,29 +35,14 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MASTER_PORT=$((12000 + RANDOM % 20000))
 echo "MASTER_PORT: $MASTER_PORT"
 
-# torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/pll_new.py \
-#   --model_ckpt /gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_lr1e-4_bs256_ctxt_1024/checkpoint-3765 \
-#   --zero_shot_csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
-#   --max_len 1024 \
-#   --batch_size 8 \
-#   --pll_mode selfenc \
-#   --run_name t5gemma_97M_phylo_lr1e-4_bs256_ctxt_1024_pll_eval_epoch_1
-
-
 torchrun --nproc_per_node=1 --master_port=$MASTER_PORT python_scripts/pll_new.py \
   --model_ckpt /gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_lr1e-4_bs256_ctxt_1024/checkpoint-15060 \
   --zero_shot_csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
   --max_len 1024 \
   --batch_size 8 \
   --pll_mode wtenc \
-  --run_name t5gemma_97M_phylo_lr1e-4_bs256_ctxt_1024_pll_eval_epoch_4
-
-# torchrun --nproc_per_node=1 python_scripts/pll.py \
-#   --model_ckpt /gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_lr1e-4_bs256_ctxt_1024/checkpoint-15060 \
-#   --zero_shot_csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
-#   --max_len 1024 \
-#   --batch_size 8 \
-#   --run_name t5gemma_97M_phylo_lr1e-4_bs256_ctxt_1024_pll_eval_epoch_4
+  --run_name t5gemma_97M_phylo_lr1e-4_bs256_ctxt_1024_pll_eval_epoch_4 \
+  --out_dir /gpfs/data/brandeslab/User/as12267/pll_results
 
 
 

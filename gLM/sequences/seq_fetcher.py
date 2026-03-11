@@ -7,6 +7,7 @@ class SequenceFetcher:
 
     def __call__(self, seq_id):
         # UniRef100 format requires prefix
-        prefixed_seq_id = f"UniRef100_{seq_id}"
-        record = self.index[prefixed_seq_id]
+        # prefixed_seq_id = f"UniRef100_{seq_id}"
+        # record = self.index[prefixed_seq_id]
+        record = self.index[seq_id]
         return str(record.seq)
