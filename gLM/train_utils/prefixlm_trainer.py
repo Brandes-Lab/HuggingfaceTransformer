@@ -11,7 +11,7 @@ import random
 import numpy as np
 from transformers import Trainer
 from torch.utils.data import DataLoader
-from gLM.models.protein_modernbert_phylo import prefixlm_forward_flash
+from gLM.attention_mask import run_encoder_flash, prefixlm_forward_flash
 
 
 def _worker_init_fn(worker_id):

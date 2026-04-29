@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=modernBERT_113M_prefixlm_bs512_ctxt_4096
-#SBATCH --partition=a100_dev
+#SBATCH --job-name=modernBERT_113M_prefixlm_bs512_ctxt_2048_correct
+#SBATCH --partition=a100_short
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=200G
-#SBATCH --time=3:00:00
-#SBATCH --output=modernBERT_113M_prefixlm_bs512_ctxt_2048_%j.out
-#SBATCH --error=modernBERT_113M_prefixlm_bs512_ctxt_2048_%j.err
+#SBATCH --time=03-00:00:00
+#SBATCH --output=modernBERT_113M_prefixlm_bs512_ctxt_2048_correct_%j.out
+#SBATCH --error=modernBERT_113M_prefixlm_bs512_ctxt_2048_correct_%j.err
 
 set -euo pipefail
 
@@ -106,14 +106,12 @@ export PYTORCH_ALLOC_CONF=expandable_segments:True
 #   --save_steps 500 \
 #   --save_strategy "steps"
 
-
-
-torchrun \
+CUDA_LAUNCH_BLOCKING=1 torchrun \
   --nproc-per-node=1 \
   --master_addr="${MASTER_ADDR}" \
   --master_port="${MASTER_PORT}" \
   python_scripts/train_modernBERT.py \
-  --run-name modernBERT_113M_prefixlm_bs512_ctxt_2048_100k \
+  --run-name modernBERT_113M_prefixlm_bs512_ctxt_2048_correct \
   --model_type "ModernBERT" \
   --training_type "prefixlm_modernbert" \
   --wandb_project "phylo-llm" \
@@ -126,15 +124,15 @@ torchrun \
   --vep-input-csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
   --output-dir /gpfs/data/brandeslab/phylo_llm_checkpts \
   --attn_implementation flash_attention_2 \
-  --max_steps 100000 \
-  --vep_eval_steps 50 \
-  --logging_steps 20 \
+  --max_steps 200000 \
+  --vep_eval_steps 10000000000 \
+  --logging_steps 4 \
   --per_device_train_batch_size 16 \
   --gradient_accumulation_steps 32 \
   --learning_rate 1e-4 \
-  --dataloader_num_workers 4 \
+  --dataloader_num_workers 8 \
   --dataloader_persistent_workers True \
-  --dataloader_prefetch_factor 2 \
+  --dataloader_prefetch_factor 4 \
   --eval_strategy "no" \
-  --save_steps 200 \
+  --save_steps 500 \
   --save_strategy "steps"

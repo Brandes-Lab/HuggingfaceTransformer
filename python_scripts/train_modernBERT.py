@@ -23,7 +23,8 @@ from gLM.models import ProteinBertModel
 from gLM.models import ProteinT5Model
 from gLM.models import ProteinBARTModel
 from gLM.models import ProteinT5GemmaModel
-from gLM.models.protein_modernbert_phylo import ProteinModernBertPrefixLM, run_sanity_checks, prefixlm_forward_flash
+from gLM.models.protein_modernbert_phylo import ProteinModernBertPrefixLM, run_sanity_checks
+from gLM.attention_mask import run_encoder_flash, prefixlm_forward_flash
 from gLM.tokenizers import TokenizerLoader, PhyloTokenizerLoader
 from gLM.train_utils import CustomBatchSizeTrainer
 from gLM.collator import create_mlm_collator, PhyloCollator
@@ -469,6 +470,19 @@ def main():
             eval_dataset=val_ds,
             tokenizer=tokenizer,
             data_collator=data_collator
+        )
+
+    if training_args.training_type == "prefixlm_modernbert":
+        trainer.add_callback(
+            ZeroShotVEPEvaluationCallback(
+                tokenizer=tokenizer,
+                input_csv=data_args.vep_input_csv,
+                trainer=trainer,
+                max_len=model_args.max_position_embeddings,
+                batch_size=training_args.per_device_eval_batch_size,
+                eval_every_n_steps=training_args.vep_eval_steps,
+                training_type="prefixlm_modernbert",
+            )
         )
 
     trainer.train()

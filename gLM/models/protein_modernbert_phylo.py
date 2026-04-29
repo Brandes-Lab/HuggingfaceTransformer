@@ -6,7 +6,7 @@ import torch
 
 from transformers import ModernBertConfig, ModernBertForMaskedLM
 
-from gLM.attention_mask.prefixlm_flash2 import run_encoder_flash, prefixlm_forward_flash
+from gLM.attention_mask import run_encoder_flash, prefixlm_forward_flash
 
 
 class ProteinModernBertPrefixLM:

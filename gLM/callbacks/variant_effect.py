@@ -8,7 +8,7 @@ from sklearn.metrics import roc_auc_score
 from transformers import TrainerCallback
 from torch.distributed import is_initialized, get_rank, barrier, all_gather_object
 
-from gLM.attention_mask.prefixlm_flash import run_encoder_flash
+from gLM.attention_mask import run_encoder_flash
 
 
 class ZeroShotVEPEvaluationCallback(TrainerCallback):
@@ -304,6 +304,13 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
 
         with torch.no_grad():
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                #  # DEBUG — remove after fixing
+                # print(f"input_ids shape: {input_ids_tensor.shape}")
+                # print(f"prefix_lengths: {prefix_lengths_tensor.tolist()}")
+                # print(f"seq_lens: {(input_ids_tensor != pad_id).sum(dim=1).tolist()}")
+                # suffix_lens = (input_ids_tensor != pad_id).sum(dim=1) - prefix_lengths_tensor
+                # print(f"suffix_lens: {suffix_lens.tolist()}")
+
                 hidden_states = run_encoder_flash(
                     model, input_ids_tensor, prefix_lengths_tensor, device
                 )
@@ -402,8 +409,8 @@ class ZeroShotVEPEvaluationCallback(TrainerCallback):
             barrier()
 
     def on_step_begin(self, args, state, control, model=None, **kwargs):
-        if state.global_step == 0:
-            self.run_vep_eval(model, step_id=state.global_step)
+        # if state.global_step == 0:
+        #     self.run_vep_eval(model, step_id=state.global_step)
         return control
 
     def on_step_end(self, args, state, control, model=None, **kwargs):
