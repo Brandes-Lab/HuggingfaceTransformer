@@ -5,8 +5,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=100G
 #SBATCH --time=03:00:00
-#SBATCH --output=VEP_score_checkpoints_%j.out
-#SBATCH --error=VEP_score_checkpoints_%j.err
+#SBATCH --output=VEP_logits_score_checkpoints_%j.out
+#SBATCH --error=VEP__logits_score_checkpoints_%j.err
 
 set -euo pipefail
 
@@ -29,15 +29,11 @@ export TOKENIZERS_PARALLELISM=false
 
 echo "Python executable: $(which python)"
 echo "CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())')"
-
-# --- run scoring ---
-python python_scripts/score_checkpoints.py \
+python python_scripts/obtain_logodds.py \
     --checkpoint_dir /gpfs/data/brandeslab/phylo_llm_checkpts/modernBERT_113M_prefixlm_bs512_ctxt_2048_100k_final \
     --tokenizer_path /gpfs/home/rm7569/HuggingfaceTransformer/phylo_char_tokenizer_with_bos \
     --vep_csv /gpfs/data/brandeslab/Data/clinvar_AA_zero_shot_input.csv \
-    --output_csv /gpfs/home/rm7569/HuggingfaceTransformer/clinvar_scores_all_steps.csv \
-    --step_start 6500 \
-    --step_end 9000 \
-    --step_size 500 \
+    --output_csv /gpfs/home/rm7569/HuggingfaceTransformer/clinvar_full_dist.csv \
+    --steps 3400 5200 \
     --batch_size 8 \
     --max_len 2048
