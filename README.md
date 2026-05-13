@@ -141,7 +141,7 @@ The ClinVar CSV must have columns: `sequence`, `pos`, `ref`, `alt`, `label`.
 
 ## Training
 
-### PrefixLM (unaligned) — main model
+### PrefixLM (unaligned)
 
 ```bash
 torchrun \
