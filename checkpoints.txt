@@ -1,8 +1,0 @@
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-500
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-1000
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-1500
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-2000
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-2500
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-3000
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-3500
-/gpfs/data/brandeslab/model_checkpts/T5Gemma_97M_phylo_bs_4096_arrow_fasta_file/checkpoint-4000
